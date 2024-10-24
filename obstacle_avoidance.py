@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 from utils.segmention import Two_Pass
 import read_data as read_data
+import time
 
 def find_max(distances, res=8):
     max_dist = 1e-9
@@ -154,6 +155,7 @@ if __name__ == "__main__":
             binary_img = var[:,:,np.newaxis].repeat(3, axis=2)
 
         cv2.circle(color_depth, (round(max_column * pad_size * 4/3), round(max_row * pad_size * 4/3)), 10, (0, 255, 0), -1)
+        cv2.imwrite(f'direction/{time.time()}.png', color_depth)
         cv2.imshow('depth', color_depth)
         if cfg.Code["segmentation"]:
             depth_and_seg_visualize(max_row, max_column, color_depth, binary_img, spatial_refine_distances)

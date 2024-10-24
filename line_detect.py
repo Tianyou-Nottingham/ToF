@@ -5,6 +5,7 @@ from read_data import read_serial_data, visualize2D
 import cv2
 import read_data
 from sklearn.inspection import DecisionBoundaryDisplay
+import time
 
 
 ## For ToF sensor, we think the imaging model is the same as camera: a pinhole camera model.
@@ -26,6 +27,61 @@ class Line:
 
     def __str__(self):
         return f"Line: {self.start} -> {self.end}"
+    
+class Plane:
+    def __init__(self, N, d) -> None:
+        self.N = N
+        self.d = d
+
+    def solve_distance(self, point):
+        """
+        平面方程: N * x + d = 0
+        """
+        return np.dot(self.N, point) + self.d
+    
+    def solve_plane(self, A, B, C):
+        """
+        求解平面方程
+        :params: three points
+        :return: Nx(平面法向量), d
+        """
+        plane = Plane(np.array([0, 0, 1]), 0)
+        Nx = np.cross(B - A, C - A)
+        Nx = Nx / np.linalg.norm(Nx)
+        d = -np.dot(Nx, np.mean(A+B+C))
+        plane.N = Nx
+        plane.d = d
+        return plane
+    
+    def RANSAC(self, data):
+        """
+        RANSAC算法
+        :params: data: 3D points
+        :return: best_plane: 最优平面
+        """
+        best_plane = None
+        best_error = np.inf
+        iter = 10000
+        sigma = 0.1 ## 阈值
+        pretotal = 0 ## 内点个数
+        Per = 0.99 ## 正确概率
+        plane = Plane(np.array([0, 0, 1]), 0)
+        for _ in range(iter):
+            A, B, C = data[np.random.choice(len(data), 3, replace=False)]
+            plane.solve_plane(A, B, C)
+            total_inlier = 0
+            error = 0
+            for point in data:
+                if plane.solve_distance(point) < sigma:
+                    total_inlier += 1
+                error += plane.solve_distance(point) ** 2
+            if total_inlier > pretotal:
+                iters = np.log(1 - Per) / np.log(1 - pow(total_inlier / len(data), 3))
+                pretotal = total_inlier
+            if error < best_error:
+                best_error = error
+                best_plane = plane
+        return best_plane
 
 def padding(data, pad_size):
     w, h = data.shape
@@ -45,9 +101,13 @@ def kmeans_clustering(data, k):
     ## return the segmentation line
     ## For the zones divided by the segmentation line, we calculate the mean depth value. And set the new 
     w, h = data.shape
+    ## random initialization
     centers = [np.random.choice(w, k), np.random.choice(h, k)]
+    ## cluster index and value
     cluster_index = [[] for _ in range(k)]
     cluster_value = [[] for _ in range(k)]
+    ## When the cluster is changed, we need to update the cluster index and value. 
+    ## And if the cluster is not changed, it means the stable centers have been found.
     cluster_changed = True
     while cluster_changed:
         cluster_changed = False
@@ -56,23 +116,35 @@ def kmeans_clustering(data, k):
                 min_dist = np.inf
                 min_index = -1
                 dist = []
+                ## To prevent the centers are not found, we need to check the number of centers.
+                for center in centers:
+                    ## Calculate the depth distance for every zone
+                        dist.append((data[i, j] - data[round(center[0]), round(center[1])])**2)
 
-                for x, y in centers:
-                    dist.append((data[i, j] - data[round(x), round(y)])**2)
+                ## Find the closer center
                 min_index = np.argmin(dist)
+                ## Center zone adds the depth value
                 cluster_value[min_index].append(data[i, j])
+                ## It means the cluster is changed
                 if (i, j) not in cluster_index[min_index]:
                     cluster_changed = True
+
                 if min_dist > dist[min_index]:
                     min_dist = dist[min_index]
-                    cluster_index[min_index].append((i, j))
+                    if (i, j) not in cluster_index[min_index]:
+                        cluster_index[min_index].append((i, j))
+                    else:
+                        continue                    
         value = {}
         for idx in range(k):
-            centers[idx] = np.mean(cluster_index[idx], axis=0)
-            value.update({np.mean(cluster_value[idx], axis=0): centers[idx]})
+            if cluster_index[idx] == []:
+                centers[idx] = [0, 0]
+            else:
+                centers[idx] = np.mean(cluster_index[idx], axis=0)
+            value.update({np.mean(cluster_value[idx], axis=0): cluster_index[idx]})
         
         value = sorted(value.items(), key=lambda x: x[0])
-    return list(dict(value).values())
+    return list(dict(value).values()) ## return the cluster index
 
 def edge_detect(data):
     padding_data = padding(data, 1)
@@ -113,11 +185,20 @@ def main():
     ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
     pad_size = cfg.Sensor["output_shape"][0] // cfg.Sensor["resolution"]
     output_shape = cfg.Sensor["output_shape"]
+    points3D = []
     while True:
         ## 1. Read the data from the serial port
         distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
+        points3D = np.array([[i, j, distances[i, j]] for i in range(cfg.Sensor["resolution"]) for j in range(cfg.Sensor["resolution"])])
         ## 2. K-means clustering
-        centers = kmeans_clustering(distances, 2)
+        points_index = kmeans_clustering(distances, 2)
+        points_obstacle = np.array([[i, j, distances[i, j]] for [i, j] in points_index[0]])
+        points_safe = np.array([[i, j, distances[i, j]] for [i, j] in points_index[1]])
+        plane_obstacle = Plane(np.array([0, 0, 1]), 0)
+        plane_safe = Plane(np.array([0, 0, 1]), 0)
+        plane_obstacle.RANSAC(points_obstacle)
+        plane_safe.RANSAC(points_safe)
+        centers = np.mean(points_index, axis=1)
         depth = visualize2D(distances, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
 
         # vertical_edge, horizontal_edge = edge_detect(distances)
@@ -138,6 +219,7 @@ def main():
         #     cv2.line(color_depth, (0, round(vertical_line[1] * pad_size)), (output_shape[0], round(vertical_line[0] * output_shape[0] + vertical_line[1] * pad_size)), (0, 255, 0), 2)
         # if horizontal_line is not None:
         #     cv2.line(color_depth, (round(horizontal_line[1] * pad_size), 0), (round(horizontal_line[0] * output_shape[0] + horizontal_line[1] * pad_size), output_shape[0]), (0, 0, 255), 2)
+        cv2.imwrite(f'kmeans/{time.time()}.png', color_depth)
         cv2.imshow('depth', color_depth)
         cv2.waitKey(1) & 0xFF == ord('q')
 

@@ -1,10 +1,10 @@
 ## Read images from '/output' and save as a video
 import cv2
 import os
-img_dir = './output'
+img_dir = './kmeans'
 img_files = os.listdir(img_dir)
-video_name = 'output.avi'
-fps = 5
+video_name = 'kmeans.avi'
+fps = 2
 frame_size = (640,640)
 
 fourcc = cv2.VideoWriter_fourcc(*'XVID')

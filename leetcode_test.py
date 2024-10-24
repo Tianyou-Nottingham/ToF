@@ -23,7 +23,7 @@ def compress(chars: list[str]) -> int:
                     i = j
                     start = j
                     break
-    return chars
+                
 if __name__ == "__main__":
     s = ["a", "a", "b", "b", "c", "c", "c"]
     print(compress(s))
