@@ -7,7 +7,7 @@ import time
 import os
 import h5py
 matplotlib.use('TkAgg',force=True)
-
+from scipy import interpolate
 import configs.config as cfg
 # PythonDataStart
 # |    63  :      5 |    66  :      5 |    71  :      5 |    73  :      5 |    74  :      5 |    79  :      5 |    83  :      5 |     X  :      X |
@@ -66,18 +66,17 @@ def visualize2D(distances, sigma, res=8, output_shape=[640, 640]):
         depth = np.zeros(output_shape)
         out_width, out_height = output_shape
         pad_size = out_width // res
-
-        for i in range(0, out_height, pad_size):
-            for j in range(0, out_width, pad_size):
-                depth[i:i+pad_size, j:j+pad_size] = distances[i//pad_size,j//pad_size]
-
+        distances = distances.astype(np.uint8)
+        depth = cv2.resize(distances, (out_width, out_height), interpolation=cv2.INTER_CUBIC)
+        sigma = sigma.astype(np.uint8)
+        sigma = cv2.resize(sigma, (out_width, out_height), interpolation=cv2.INTER_CUBIC)
         # depth = cv2.applyColorMap(normalize(depth), cv2.COLORMAP_MAGMA)
         # cv2.imshow('depth', depth)
         # img_name = f'output/{time.time()}.png'
         # data['depth_image'] = depth
         # cv2.imwrite(img_name, depth)
         # cv2.waitKey(1) & 0xFF == ord('q')
-        return depth
+        return depth, sigma
 
 def read_file_data(file_name, res):
     with open(file_name, 'r') as f:
@@ -118,7 +117,7 @@ if __name__ == "__main__":
             data['distance'] = distances
             data['sigma'] = sigma
             h5_name = f'output/{time.time()}.h5'
-            save_h5(data, h5_name, cfg.h5_cfg)
+            # save_h5(data, h5_name, cfg.h5_cfg)
 
 
         # ser.close()
