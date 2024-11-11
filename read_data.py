@@ -61,22 +61,29 @@ def read_serial_data(ser, res=8):
         distances, sigma = parse_data(raw_data)
         return distances, sigma ## 8x8 array
     
-def visualize2D(distances, sigma, res=8, output_shape=[640, 640]):
+def visualize2D(distances, sigma, res=8, output_shape=[640, 640], upsample=False):
         # print(distances)
-        depth = np.zeros(output_shape)
+        depth_map = np.zeros(output_shape).astype(np.uint8)
+        sigma_map = np.zeros(output_shape).astype(np.uint8)
         out_width, out_height = output_shape
         pad_size = out_width // res
         distances = distances.astype(np.uint8)
-        depth = cv2.resize(distances, (out_width, out_height), interpolation=cv2.INTER_CUBIC)
         sigma = sigma.astype(np.uint8)
-        sigma = cv2.resize(sigma, (out_width, out_height), interpolation=cv2.INTER_CUBIC)
+        if upsample:
+            depth_map = cv2.resize(distances, (out_width, out_height), interpolation=cv2.INTER_CUBIC)
+            sigma_map = cv2.resize(sigma, (out_width, out_height), interpolation=cv2.INTER_CUBIC)
+        else:
+            for i in range(res):
+                for j in range(res):
+                    depth_map[i*pad_size:(i+1)*pad_size, j*pad_size:(j+1)*pad_size] = distances[i, j]
+                    sigma_map[i*pad_size:(i+1)*pad_size, j*pad_size:(j+1)*pad_size] = sigma[i, j]
         # depth = cv2.applyColorMap(normalize(depth), cv2.COLORMAP_MAGMA)
         # cv2.imshow('depth', depth)
         # img_name = f'output/{time.time()}.png'
         # data['depth_image'] = depth
         # cv2.imwrite(img_name, depth)
         # cv2.waitKey(1) & 0xFF == ord('q')
-        return depth, sigma
+        return depth_map, sigma_map
 
 def read_file_data(file_name, res):
     with open(file_name, 'r') as f:
@@ -113,10 +120,16 @@ if __name__ == "__main__":
         ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
         while True:
             distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
-            depth = visualize2D(distances, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
+            distances = normalize(distances)
+            print(distances)
+            depth_map, sigma_map = visualize2D(distances, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"], upsample=False)
             data['distance'] = distances
             data['sigma'] = sigma
-            h5_name = f'output/{time.time()}.h5'
+            color_depth = cv2.applyColorMap(depth_map, cv2.COLORMAP_MAGMA)        
+            cv2.imshow('depth', color_depth)
+            cv2.waitKey(1) & 0xFF == ord('q')
+
+            # h5_name = f'output/{time.time()}.h5'
             # save_h5(data, h5_name, cfg.h5_cfg)
 
 

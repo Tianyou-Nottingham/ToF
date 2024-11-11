@@ -104,7 +104,7 @@ def main():
             if TCP_R_data == b'OK':
                 print('Received OK')
                 TCP_send(connection_socket, send.encode('utf-8'))
-                time.sleep(0.2)
+                # time.sleep(0.2)
             else:
                 print('No data received')
 
