@@ -1,10 +1,10 @@
 import serial
-from read_data import read_serial_data, visualize2D
+from read_data_utils import read_serial_data, visualize2D
 import configs.config as cfg
 import cv2
 import numpy as np
 from utils.segmention import Two_Pass
-import read_data as read_data
+import read_data_utils as read_data_utils
 import time
 
 def find_max(distances, res=8):
@@ -147,7 +147,7 @@ if __name__ == "__main__":
         max_row, max_column = find_max(spatial_refine_distances, spatial_refine_distances.shape[0])
         ## 4. raw depth image and color depth image
         depth = visualize2D(time_refine_distances, time_refine_sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
-        color_depth = cv2.applyColorMap(read_data.normalize(depth), cv2.COLORMAP_MAGMA)
+        color_depth = cv2.applyColorMap(read_data_utils.normalize(depth), cv2.COLORMAP_MAGMA)
         ## 5. segmention
         if cfg.Code["segmentation"]:
             binary_img = np.zeros_like(color_depth)

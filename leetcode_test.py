@@ -1,29 +1,18 @@
-def compress(chars: list[str]) -> int:
-    L = len(chars)
-    i = 0
+def longestSubarray( nums: list[int]) -> int:
+    maxL = 0
     start = 0
-    while i < L-1:
-        nums = 1
-        flag = 0
-        for j in range(i+1, L):
-            if chars[j] == chars[i]:
-                flag = 1
-                nums += 1
-                i = j
-                if i == L-1:
-                    chars[start+1: start+len(str(nums))+1] = str(nums)
-                continue
-            else:
-                if flag == 0:
-                    i = j
-                    start = j
-                    break
-                else:
-                    chars[start+1: start+len(str(nums))+1] = str(nums)
-                    i = j
-                    start = j
-                    break
-                
+    flag = 0
+    for end in range(len(nums)):
+        if nums[end] == 0:
+            flag += 1
+            while flag > 1:
+                if nums[start] == 0:
+                    flag -= 1
+                start += 1
+            
+            start = end + 1
+        maxL = max(maxL, end - start + 1)
+    return maxL
+
 if __name__ == "__main__":
-    s = ["a", "a", "b", "b", "c", "c", "c"]
-    print(compress(s))
+    print(longestSubarray([0,1,1,1,0,1,1,0,1])) # 3
