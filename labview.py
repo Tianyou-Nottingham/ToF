@@ -2,9 +2,9 @@ from socket import *
 import numpy as np
 import configs.config as cfg
 import serial
-from read_data import read_serial_data, visualize2D
+from read_data_utils import read_serial_data, visualize2D
 import cv2
-import read_data
+import read_data_utils
 import time
 from obstacle_avoidance import kmeans_clustering, Plane, outliers_detection
 from direction_visualization import refine_by_time
@@ -111,7 +111,7 @@ def main():
             send = np.array([0, 0])
 
         depth, sigma = visualize2D(time_refine_distances, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
-        color_depth = cv2.applyColorMap(read_data.normalize(depth), cv2.COLORMAP_MAGMA)        
+        color_depth = cv2.applyColorMap(read_data_utils.normalize(depth), cv2.COLORMAP_MAGMA)        
         cv2.circle(color_depth, (round(center_obstacle[1]*pad_size), round(center_obstacle[0]*pad_size)), 5, (0, 255, 0), -1)
         cv2.putText(color_depth, "Obstacle", (round(center_obstacle[1]*pad_size), round(center_obstacle[0]*pad_size)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.circle(color_depth, (round(center_safe[1]*pad_size), round(center_safe[0]*pad_size)), 5, (0, 0, 255), -1)

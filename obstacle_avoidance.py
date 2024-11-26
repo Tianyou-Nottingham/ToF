@@ -1,12 +1,13 @@
 import numpy as np
 import configs.config as cfg
 import serial
-from read_data import read_serial_data, visualize2D
+from read_data_utils import read_serial_data, visualize2D, normalize
 import cv2
-import read_data
+import matplotlib.pyplot as plt
 from sklearn.inspection import DecisionBoundaryDisplay
 import time
 from direction_visualization import refine_by_time, find_max
+from TOF_RANSAC import Plane
 
 ## For ToF sensor, we think the imaging model is the same as camera: a pinhole camera model.
 ## Only difference is the resolution.
@@ -18,77 +19,12 @@ from direction_visualization import refine_by_time, find_max
 ## So this code is to detect the corners in the low-resolution depth image.
 ## Of course, we need a video input or continuous depth image input.
 
-class Line:
-    def __init__(self, start, end):
-        self.start = start
-        self.end = end
-        self.k = (end[1] - start[1]) / (end[0] - start[0])
-        self.b = start[1] - self.k * start[0]
-
-    def __str__(self):
-        return f"Line: {self.start} -> {self.end}"
-    
-class Plane:
-    def __init__(self, N, d) -> None:
-        self.N = N
-        self.d = d
-
-    def solve_distance(self, point):
-        """
-        平面方程: N * x + d = 0
-        """
-        return np.dot(self.N, point) + self.d
-    
-    def solve_plane(self, A, B, C):
-        """
-        求解平面方程
-        :params: three points
-        :return: Nx(平面法向量), d
-        """
-        plane = Plane(np.array([0, 0, 1]), 0)
-        Nx = np.cross(B - A, C - A)
-        Nx = Nx / np.linalg.norm(Nx)
-        d = -np.dot(Nx, np.mean(A+B+C))
-        plane.N = Nx
-        plane.d = d
-        return plane
-    
-    def RANSAC(self, data):
-        """
-        RANSAC算法
-        :params: data: 3D points
-        :return: best_plane: 最优平面
-        """
-        best_plane = None
-        best_error = np.inf
-        iter = 10000
-        sigma = 0.1 ## 阈值
-        pretotal = 0 ## 内点个数
-        Per = 0.99 ## 正确概率
-        plane = Plane(np.array([0, 0, 1]), 0)
-        for _ in range(iter):
-            A, B, C = data[np.random.choice(len(data), 3, replace=False)]
-            plane.solve_plane(A, B, C)
-            total_inlier = 0
-            error = 0
-            for point in data:
-                if plane.solve_distance(point) < sigma:
-                    total_inlier += 1
-                error += plane.solve_distance(point) ** 2
-            if total_inlier > pretotal:
-                iters = np.log(1 - Per) / np.log(1 - pow(total_inlier / len(data), 3))
-                pretotal = total_inlier
-            if error < best_error:
-                best_error = error
-                best_plane = plane
-        return best_plane
 
 def padding(data, pad_size):
     w, h = data.shape
     pad_data = np.zeros((w + 2 * pad_size, h + 2 * pad_size))
     pad_data[pad_size: w + pad_size, pad_size: h + pad_size] = data
     return pad_data
-
 
 def tof_to_camera(x, y, image_shape):
     ## transform the ToF image to camera image
@@ -162,7 +98,6 @@ def outliers_detection(data, threshold):
                 data[i].remove(point)
     return data
 
-
 def edge_detect(data):
     padding_data = padding(data, 1)
     vertical_edge = np.zeros_like(data)
@@ -217,15 +152,25 @@ def main():
         points_index = kmeans_clustering(time_refine_distances, 2)
         ## 4. Outliers detection
         points_index = outliers_detection(points_index, 4)
-        # points_obstacle = np.array([[i, j, time_refine_distances[i, j]] for [i, j] in points_index[0]])
-        # points_safe = np.array([[i, j, time_refine_distances[i, j]] for [i, j] in points_index[1]])
-        # plane_obstacle = Plane(np.array([0, 0, 1]), 0)
-        # plane_safe = Plane(np.array([0, 0, 1]), 0)
-        # plane_obstacle.RANSAC(points_obstacle)
-        # plane_safe.RANSAC(points_safe)
+        ## 5. Plane fitting
+        points_obstacle = np.array([[i, j, time_refine_distances[i, j]] for [i, j] in points_index[0]])
+        points_safe = np.array([[i, j, time_refine_distances[i, j]] for [i, j] in points_index[1]])
+        plane_obstacle = Plane(np.array([0, 0, 1]), 0)
+        plane_safe = Plane(np.array([0, 0, 1]), 0)
+        plane_obstacle = plane_obstacle.ToF_RANSAC(points_obstacle, res=cfg.Sensor["resolution"])
+        plane_safe = plane_safe.ToF_RANSAC(points_safe, res=cfg.Sensor["resolution"])
         centers = [np.mean(points_index[0], axis=0), np.mean(points_index[1], axis=0)]
+        ## 6. Visualization
         depth, sigma = visualize2D(time_refine_distances, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
-
+        print(f"Obstacle plane N: {plane_obstacle.N}, d: {plane_obstacle.d}.")
+        print(f"Safe plane N: {plane_safe.N}, d: {plane_safe.d}.")
+        # fig = plt.figure() 
+        # ax = fig.add_subplot(111, projection='3d')
+        # ax.scatter(points3D[:, 0], points3D[:, 1], points3D[:, 2], c='r', marker='o')
+        # ax.set_xlabel('X Label')
+        # ax.set_ylabel('Y Label')
+        # ax.set_zlabel('Z Label')
+        # plt.show()
         # vertical_edge, horizontal_edge = edge_detect(distances)
         # vertical_edge = visualize2D(vertical_edge, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
         # horizontal_edge = visualize2D(horizontal_edge, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
@@ -235,7 +180,7 @@ def main():
         # cv2.imshow('horizontal_edge', horizontal_edge)
         # vertical_line, horizontal_line = line_detect(distances, 500)
 
-        color_depth = cv2.applyColorMap(read_data.normalize(depth), cv2.COLORMAP_MAGMA)        
+        color_depth = cv2.applyColorMap(normalize(depth), cv2.COLORMAP_MAGMA)        
         cv2.circle(color_depth, (round(centers[0][1]*pad_size), round(centers[0][0]*pad_size)), 5, (0, 255, 0), -1)
         cv2.putText(color_depth, "Obstacle", (round(centers[0][1]*pad_size), round(centers[0][0]*pad_size)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.circle(color_depth, (round(centers[1][1]*pad_size), round(centers[1][0]*pad_size)), 5, (0, 0, 255), -1)

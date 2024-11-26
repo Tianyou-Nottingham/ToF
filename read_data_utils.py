@@ -49,17 +49,15 @@ def parse_data(raw_data):
         distance.append(row_first)
         sigma.append(row_second)
     
+    distance.reverse()
+    sigma.reverse()
     return np.array(distance), np.array(sigma)
 
 def read_serial_data(ser, res=8):
-    while True:
-        if ser.readline().strip() == b'PythonDataStart':
-            raw_data = [ser.readline().strip() for _ in range(res)]
-        else:
-            continue
-
-        distances, sigma = parse_data(raw_data)
-        return distances, sigma ## 8x8 array
+    if ser.readline().strip() == b'PythonDataStart':
+        raw_data = [ser.readline().strip() for _ in range(res)]
+    distances, sigma = parse_data(raw_data)
+    return distances, sigma ## 8x8 array
     
 def visualize2D(distances, sigma, res=8, output_shape=[640, 640], upsample=False):
         # print(distances)
@@ -120,7 +118,11 @@ if __name__ == "__main__":
         ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
         while True:
             distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
+<<<<<<< HEAD:read_data.py
             distances = normalize(distances)
+=======
+            # distances = normalize(distances)
+>>>>>>> 158830bf15fffd7c5d28d6c483d2cd29100af011:read_data_utils.py
             print(distances)
             depth_map, sigma_map = visualize2D(distances, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"], upsample=False)
             data['distance'] = distances
@@ -128,9 +130,12 @@ if __name__ == "__main__":
             color_depth = cv2.applyColorMap(depth_map, cv2.COLORMAP_MAGMA)        
             cv2.imshow('depth', color_depth)
             cv2.waitKey(1) & 0xFF == ord('q')
+<<<<<<< HEAD:read_data.py
 
             # h5_name = f'output/{time.time()}.h5'
             # save_h5(data, h5_name, cfg.h5_cfg)
+=======
+>>>>>>> 158830bf15fffd7c5d28d6c483d2cd29100af011:read_data_utils.py
 
 
         # ser.close()
