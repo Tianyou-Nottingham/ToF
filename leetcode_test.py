@@ -1,18 +1,29 @@
-def longestSubarray( nums: list[int]) -> int:
-    maxL = 0
-    start = 0
-    flag = 0
-    for end in range(len(nums)):
-        if nums[end] == 0:
-            flag += 1
-            while flag > 1:
-                if nums[start] == 0:
-                    flag -= 1
-                start += 1
-            
-            start = end + 1
-        maxL = max(maxL, end - start + 1)
-    return maxL
+def asteroidCollision(asteroids: list[int]) -> list[int]:
+    stable = []
+    for asteroid in asteroids:
+        stable.append(asteroid)
+        if len(stable) == 1:
+            continue
+        else:
+            stable.pop()
+            # L = len(stable)
+            while len(stable) > 0:
+                last = stable.pop()
+                if last > 0 and asteroid < 0:
+                    if last > abs(asteroid):
+                        stable.append(last)
+                        break
+                    elif len(stable) == 0:
+                        stable.append(asteroid)
+                        break
+                    else:
+                        continue
+                else:
+                    stable.append(last)
+                    stable.append(asteroid)
+                    break
+
+    return stable
 
 if __name__ == "__main__":
-    print(longestSubarray([0,1,1,1,0,1,1,0,1])) # 3
+    print(asteroidCollision([1, -2, -5])) # 3

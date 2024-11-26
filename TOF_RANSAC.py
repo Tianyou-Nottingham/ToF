@@ -63,7 +63,7 @@ class Plane:
         # 根据平面方程 N · X + d = 0 求解 z
         if c == 0:
             raise ValueError("The normal vector's z component (c) cannot be zero for visualization.")
-        Z = - (a * X + b * Y + d) / c
+        Z = - (-a * X + b * Y + d) / c
 
         # 创建 3D 图形
         ax = fig.add_subplot(121, projection='3d')
@@ -136,9 +136,9 @@ class Plane:
             total_inlier = 0
             error = 0
             ## 只取一个点进行RANSAC
-            point_offset = np.random.choice(pad_size, len(data))
+            point_offset = [np.random.choice(pad_size, len(data)), np.random.choice(pad_size, len(data))]
             for i in range(len(data)):
-                point = np.array([int(x_index[i]*pad_size+point_offset[i]), int(y_index[i]*pad_size+point_offset[i]), d_value[i]])
+                point = np.array([int(x_index[i]*pad_size+point_offset[0][i]), int(y_index[i]*pad_size+point_offset[1][i]), d_value[i]])
                 if plane.solve_distance(point) < sigma:
                     total_inlier += 1
                 error += plane.solve_distance(point) ** 2
@@ -150,7 +150,7 @@ class Plane:
                 best_error = error
                 best_plane = plane
             k += 1
-        return best_plane, np.sqrt(error / len(data))
+        return best_plane, np.sqrt(best_error / total_inlier)
 
 def test():
     ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])

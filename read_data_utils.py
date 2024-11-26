@@ -49,17 +49,15 @@ def parse_data(raw_data):
         distance.append(row_first)
         sigma.append(row_second)
     
+    distance.reverse()
+    sigma.reverse()
     return np.array(distance), np.array(sigma)
 
 def read_serial_data(ser, res=8):
-    while True:
-        if ser.readline().strip() == b'PythonDataStart':
-            raw_data = [ser.readline().strip() for _ in range(res)]
-        else:
-            continue
-
-        distances, sigma = parse_data(raw_data)
-        return distances, sigma ## 8x8 array
+    if ser.readline().strip() == b'PythonDataStart':
+        raw_data = [ser.readline().strip() for _ in range(res)]
+    distances, sigma = parse_data(raw_data)
+    return distances, sigma ## 8x8 array
     
 def visualize2D(distances, sigma, res=8, output_shape=[640, 640], upsample=False):
         # print(distances)
