@@ -146,6 +146,7 @@ def main():
         points3D = np.array([[i, j, distances[i, j]] for i in range(cfg.Sensor["resolution"]) for j in range(cfg.Sensor["resolution"])])
         ## 2. Refine by time
         time_refine_distances, time_refine_sigma = refine_by_time(distances, sigma, last_distances, last_sigma)
+        print(time_refine_distances)
         last_distances = distances
         last_sigma = sigma
         ## 3. K-means clustering
@@ -155,41 +156,23 @@ def main():
         ## 5. Plane fitting
         points_obstacle = np.array([[i, j, time_refine_distances[i, j]] for [i, j] in points_index[0]])
         points_safe = np.array([[i, j, time_refine_distances[i, j]] for [i, j] in points_index[1]])
-        plane_obstacle = Plane(np.array([0, 0, 1]), 0)
-        plane_safe = Plane(np.array([0, 0, 1]), 0)
-        plane_obstacle = plane_obstacle.ToF_RANSAC(points_obstacle, res=cfg.Sensor["resolution"])
-        plane_safe = plane_safe.ToF_RANSAC(points_safe, res=cfg.Sensor["resolution"])
+        # plane_obstacle = Plane(np.array([0, 0, 1]), 0)
+        # plane_safe = Plane(np.array([0, 0, 1]), 0)
+        # plane_obstacle = plane_obstacle.ToF_RANSAC(points_obstacle, res=cfg.Sensor["resolution"])
+        # plane_safe = plane_safe.ToF_RANSAC(points_safe, res=cfg.Sensor["resolution"])
         centers = [np.mean(points_index[0], axis=0), np.mean(points_index[1], axis=0)]
         ## 6. Visualization
-        depth, sigma = visualize2D(time_refine_distances, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
-        print(f"Obstacle plane N: {plane_obstacle.N}, d: {plane_obstacle.d}.")
-        print(f"Safe plane N: {plane_safe.N}, d: {plane_safe.d}.")
-        # fig = plt.figure() 
-        # ax = fig.add_subplot(111, projection='3d')
-        # ax.scatter(points3D[:, 0], points3D[:, 1], points3D[:, 2], c='r', marker='o')
-        # ax.set_xlabel('X Label')
-        # ax.set_ylabel('Y Label')
-        # ax.set_zlabel('Z Label')
-        # plt.show()
-        # vertical_edge, horizontal_edge = edge_detect(distances)
-        # vertical_edge = visualize2D(vertical_edge, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
-        # horizontal_edge = visualize2D(horizontal_edge, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
-        # vertical_edge = cv2.applyColorMap(read_data.normalize(vertical_edge), cv2.COLORMAP_MAGMA)
-        # horizontal_edge = cv2.applyColorMap(read_data.normalize(horizontal_edge), cv2.COLORMAP_MAGMA)
-        # cv2.imshow('vertical_edge', vertical_edge)
-        # cv2.imshow('horizontal_edge', horizontal_edge)
-        # vertical_line, horizontal_line = line_detect(distances, 500)
+        depth, sigma = visualize2D(time_refine_distances, time_refine_sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
+        # print(f"Obstacle plane N: {plane_obstacle.N}, d: {plane_obstacle.d}.")
+        # print(f"Safe plane N: {plane_safe.N}, d: {plane_safe.d}.")
 
-        color_depth = cv2.applyColorMap(normalize(depth), cv2.COLORMAP_MAGMA)        
+
+        color_depth = cv2.applyColorMap(depth, cv2.COLORMAP_MAGMA)        
         cv2.circle(color_depth, (round(centers[0][1]*pad_size), round(centers[0][0]*pad_size)), 5, (0, 255, 0), -1)
         cv2.putText(color_depth, "Obstacle", (round(centers[0][1]*pad_size), round(centers[0][0]*pad_size)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.circle(color_depth, (round(centers[1][1]*pad_size), round(centers[1][0]*pad_size)), 5, (0, 0, 255), -1)
         cv2.putText(color_depth, "Safe", (round(centers[1][1]*pad_size), round(centers[1][0]*pad_size)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        # if vertical_line is not None :
-        #     cv2.line(color_depth, (0, round(vertical_line[1] * pad_size)), (output_shape[0], round(vertical_line[0] * output_shape[0] + vertical_line[1] * pad_size)), (0, 255, 0), 2)
-        # if horizontal_line is not None:
-        #     cv2.line(color_depth, (round(horizontal_line[1] * pad_size), 0), (round(horizontal_line[0] * output_shape[0] + horizontal_line[1] * pad_size), output_shape[0]), (0, 0, 255), 2)
-        # cv2.imwrite(f'kmeans/{time.time()}.png', color_depth)
+
         out = np.hstack([color_depth, cv2.applyColorMap(sigma, cv2.COLORMAP_TURBO)])
         cv2.imshow('depth', out)
         cv2.waitKey(1) & 0xFF == ord('q')

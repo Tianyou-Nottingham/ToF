@@ -26,7 +26,7 @@ def exit(socket):
 if __name__ == "__main__":
     connection_socket = TCP_server_connect()
     print('Connected')
-    send = '[924,-45]'
+    send = '-0.1,0.5'
     
     if TCP_receive(connection_socket) == b'OK':
         print('Received OK')
