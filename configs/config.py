@@ -6,7 +6,7 @@ Sensor = {
     "resolution": 8,
     "max_depth": 2500, ## milemeters
     "min_depth": 1e-3,
-    "output_shape": [640, 640],
+    "output_shape": [256, 256],
 }
 h5_cfg = {
     "distance": True,

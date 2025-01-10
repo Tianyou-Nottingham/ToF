@@ -91,11 +91,10 @@ def outliers_detection(data, threshold):
     ## We need to detect the outliers in the cluster index
     ## If the distance between the point and the center is larger than the threshold, we need to remove the point.
     ## And we need to recalculate the center.
-    centers = [np.mean(data[0], axis=0), np.mean(data[1], axis=0)]
+    center = np.mean(data, axis=0)
     for i in range(len(data)):
-        for point in data[i]:
-            if np.linalg.norm(np.array(point) - centers[i]) > threshold:
-                data[i].remove(point)
+        if np.linalg.norm(np.array(data[i]) - center) > threshold:
+            np.delete(data, i)
     return data
 
 def edge_detect(data):
@@ -157,7 +156,7 @@ def main():
         points_safe = np.array([[i, j, time_refine_distances[i, j]] for [i, j] in points_index[1]])
         plane_obstacle = Plane(np.array([0, 0, 1]), 0)
         plane_safe = Plane(np.array([0, 0, 1]), 0)
-        plane_obstacle = plane_obstacle.ToF_RANSAC(points_obstacle, res=cfg.Sensor["resolution"])
+        plane_obstacle, error_obstacle = plane_obstacle.ToF_RANSAC(points_obstacle, res=cfg.Sensor["resolution"])
         plane_safe = plane_safe.ToF_RANSAC(points_safe, res=cfg.Sensor["resolution"])
         centers = [np.mean(points_index[0], axis=0), np.mean(points_index[1], axis=0)]
         ## 6. Visualization
