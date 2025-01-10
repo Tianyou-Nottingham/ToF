@@ -35,18 +35,20 @@ def direction_of_safe_zone(center_safe, output_shape):
     center_x = center_safe[0]
     center_y = center_safe[1]
     move_step = np.array([0, 0])
-    if center_x < output_shape // 2:
-        if center_y < output_shape // 2:
-            move_step = np.array([-5, -5])
+    # Robot's coordinate system is different from the image coordinate system
+    # x-axis is opposite
+    if center_x < output_shape // 2: # safe center is on the image up side, robot should move up
+        if center_y < output_shape // 2: # safe center is on the image left side, robot should move up and left
+            move_step = np.array([-1, 1])
         elif center_y > output_shape // 2:
-            move_step = np.array([-5, 5])
+            move_step = np.array([1, 1])
         # else:
         #     move_step = np.array([-5, 0])
     elif center_x > output_shape // 2:
         if center_y < output_shape // 2:
-            move_step = np.array([5, -5])
+            move_step = np.array([-1, -1])
         elif center_y > output_shape // 2:
-            move_step = np.array([5, 5])
+            move_step = np.array([1, -1])
         # else:
         #     move_step = np.array([5, 0])
     # else:
@@ -88,30 +90,28 @@ def main():
         points_safe = np.array([[i, j, time_refine_distances[i, j]] for [i, j] in points_index[1]])
         center_obstacle = np.mean(points_index[0], axis=0)
         center_safe = np.mean(points_index[1], axis=0)
-
+        # if np.linalg.norm(center_obstacle - center_safe, 2) < 2:
+        #     continue
         ## Cheange [x, x] data to TCP format
+        print('Obstacle center: ', center_obstacle)
+        print('Safe center: ', center_safe)
         direction = direction_of_safe_zone(center_safe, cfg.Sensor["resolution"])
-        index += 1
-        if index % 5 != 0:
-            send = send + direction
-        else:
 
-            send = str(round(send[0]/5)).rjust(3, ' ')+","+str(round(send[1])).rjust(3, ' ')
+        send = str(direction[0]).rjust(4, ' ')+","+str(direction[1]).rjust(4, ' ')
         
-            print('Send data: ', send.encode('utf-8'))
-            print('Send data length: ', len(send))
+        print('Send data: ', send.encode('utf-8'))
+        print('Send data length: ', len(send))
 
-            if TCP_R_data == b'OK':
-                print('Received OK')
-                TCP_send(connection_socket, send.encode('utf-8'))
-                time.sleep(0.2)
-            else:
-                print('No data received')
+        if TCP_R_data == b'OK':
+            print('Received OK')
+            TCP_send(connection_socket, send.encode('utf-8'))
+        else:
+            print('No data received')
 
-            send = np.array([0, 0])
+        send = np.array([0, 0])
 
-        depth, sigma = visualize2D(time_refine_distances, sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
-        color_depth = cv2.applyColorMap(read_data_utils.normalize(depth), cv2.COLORMAP_MAGMA)        
+        depth, sigma = visualize2D(time_refine_distances, time_refine_sigma, cfg.Sensor["resolution"], cfg.Sensor["output_shape"])
+        color_depth = cv2.applyColorMap(depth, cv2.COLORMAP_MAGMA)        
         cv2.circle(color_depth, (round(center_obstacle[1]*pad_size), round(center_obstacle[0]*pad_size)), 5, (0, 255, 0), -1)
         cv2.putText(color_depth, "Obstacle", (round(center_obstacle[1]*pad_size), round(center_obstacle[0]*pad_size)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.circle(color_depth, (round(center_safe[1]*pad_size), round(center_safe[0]*pad_size)), 5, (0, 0, 255), -1)

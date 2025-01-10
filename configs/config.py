@@ -4,7 +4,7 @@ Serial = {
 }
 Sensor = {
     "resolution": 8,
-    "max_depth": 2500, ## milemeters
+    "max_depth": 2000, ## 10 meters
     "min_depth": 1e-3,
     "output_shape": [256, 256],
 }

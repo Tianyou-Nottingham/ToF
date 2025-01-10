@@ -127,6 +127,9 @@ if __name__ == "__main__":
             cv2.imshow('depth', color_depth)
             cv2.waitKey(1) & 0xFF == ord('q')
 
+            # h5_name = f'output/{time.time()}.h5'
+            # save_h5(data, h5_name, cfg.h5_cfg)
+
 
         # ser.close()
             
