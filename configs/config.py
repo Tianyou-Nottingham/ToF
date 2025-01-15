@@ -24,4 +24,5 @@ Code = {
     "segmentation": False,
     "read_data": True,
     "obstacle_avoidance": True,
+    "distance_rectified_fov": True,
 }
