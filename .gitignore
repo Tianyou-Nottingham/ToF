@@ -1,0 +1,7 @@
+**/out
+**/output
+*/__pycache__/
+*/.vscode/
+/.idea/
+*/configs/__pycache__
+.pyc

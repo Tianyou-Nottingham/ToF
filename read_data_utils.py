@@ -144,6 +144,17 @@ if __name__ == "__main__":
         ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
         while True:
             distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
+            for i in range(distances.shape[0]):
+                for j in range(distances.shape[1]):
+                    if distances[i, j] > 1.5 and distances[i, j] < 450:
+                        if i in [0, 1, 6, 7] and j in [0, 1, 6, 7]:
+                            distances[i, j] *= cfg.Sensor["alpha_corner"]
+                        elif i in [0, 1, 6, 7] or j in [0, 1, 6, 7]:
+                            distances[i, j] *= cfg.Sensor["alpha_edge"]
+                        else:
+                            continue
+                    else:
+                        continue
             # distances = normalize(distances)
             print(distances)
             depth_map, sigma_map = visualize2D(
