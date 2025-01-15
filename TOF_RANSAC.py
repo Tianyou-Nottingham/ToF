@@ -20,6 +20,7 @@ from direction_visualization import refine_by_time
 from read_data_utils import visualize2D, normalize
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
+import utils.distance_rectified_fov
 
 
 class Plane:
@@ -175,7 +176,7 @@ class Plane:
         k = 0
         while (
             k < max_iter and pretotal < len(data) * 3 / 4  # and best_error > max_error
-        ):  # pretotal < len(data) *2/3: ## 当内点个数大于总点数的2/3 或 大于预设迭代次数时，停止迭代
+        ):  # pretotal < len(data) *2/3: ## 当内点个数大于总点数的3/4 或 大于预设迭代次数时，停止迭代
             point_offset = [
                 np.random.choice(pad_size, len(data)),
                 np.random.choice(pad_size, len(data)),
@@ -226,7 +227,7 @@ class Plane:
                 self.error += self.solve_distance(point) ** 2
 
             if total_inlier > pretotal:
-                iters = np.log(1 - Per) / np.log(1 - pow(total_inlier / len(data), 3))
+                iters = np.log(1 - Per) / np.log(1 - pow(total_inlier / len(data), 5))
                 pretotal = total_inlier
             if self.error < best_error:
                 best_error = self.error
@@ -245,22 +246,11 @@ def test():
     while True:
         ## 1. Read the data from the serial port
         distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
-        # for i in range(distances.shape[0]):
-        #     for j in range(distances.shape[1]):
-        #         if distances[i, j] > 1.5 and distances[i, j] < 2500:
-        #             if i in [0, 1, 6, 7] and j in [0, 1, 6, 7]:
-        #                 distances[i, j] *= cfg.Sensor["alpha_corner"]
-        #             elif i in [0, 1, 6, 7] or j in [0, 1, 6, 7]:
-        #                 distances[i, j] *= cfg.Sensor["alpha_edge"]
-        #             else:
-        #                 continue
-        #         else:
-        #             continue
+
         ## 2. Refine by time
         time_refine_distances, time_refine_sigma = refine_by_time(
             distances, sigma, last_distances, last_sigma
         )
-        # print(time_refine_distances)
         points3D = np.array(
             [
                 [i, j, time_refine_distances[i, j]]
@@ -270,8 +260,11 @@ def test():
         )
         last_distances = distances
         last_sigma = sigma
-
-        # ## 3. ToF RANSAC
+        ## 2.1 Rectified the distance
+        if cfg["Code"]["distance_rectified_fov"]:
+            points3D = utils.distance_rectified_fov(
+            points3D)
+        ## 3. ToF RANSAC
         plane = Plane(np.array([0, 0, 1]), 0)
         # plane.ToF_RANSAC(points3D, cfg.Sensor["resolution"], 256)
         plane.fit_plane(points3D)
