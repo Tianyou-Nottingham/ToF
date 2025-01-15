@@ -4,4 +4,5 @@
 */.vscode/
 /.idea/
 */configs/__pycache__
+*/utils/__pycache__
 .pyc
