@@ -7,6 +7,7 @@ from direction_visualization import refine_by_time
 from obstacle_avoidance import kmeans_clustering, outliers_detection
 import matplotlib.pyplot as plt
 from utils.kmeans import plane_kmeans
+from utils.distance_rectified_fov import distance_rectified_fov
 
 
 def two_plane_visualization(fig, Plane1, Plane2, data1, data2):
@@ -26,8 +27,8 @@ def two_plane_visualization(fig, Plane1, Plane2, data1, data2):
     # d_offset = -(a * d[0] + b * d[1] + c * d[2])
 
     # 创建网格 (x, y)
-    x = np.linspace(0, 8, 100)
-    y = np.linspace(0, 8, 100)
+    x = np.linspace(-50, 50, 100)
+    y = np.linspace(-50, 50, 100)
     X, Y = np.meshgrid(x, y)
 
     # 根据平面方程 N · X + d = 0 求解 z
@@ -135,30 +136,24 @@ def test():
     while True:
         ## 1. Read the data from the serial port
         distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
-        # for i in range(distances.shape[0]):
-        #     for j in range(distances.shape[1]):
-        #         if distances[i, j] > 1.5 and distances[i, j] < 2500:
-        #             if i in [0, 1, 6, 7] and j in [0, 1, 6, 7]:
-        #                 distances[i, j] *= cfg.Sensor["alpha_corner"]
-        #             elif i in [0, 1, 6, 7] or j in [0, 1, 6, 7]:
-        #                 distances[i, j] *= cfg.Sensor["alpha_edge"]
-        #             else:
-        #                 continue
-        #         else:
-        #             continue
-        points3D = np.array(
-            [
-                [i, j, distances[i, j]]
-                for i in range(cfg.Sensor["resolution"])
-                for j in range(cfg.Sensor["resolution"])
-            ]
-        )
         ## 2. Refine by time
         time_refine_distances, time_refine_sigma = refine_by_time(
             distances, sigma, last_distances, last_sigma
         )
         last_distances = distances
         last_sigma = sigma
+
+        points3D = np.array(
+            [
+                [i, j, time_refine_distances[i, j]]
+                for i in range(cfg.Sensor["resolution"])
+                for j in range(cfg.Sensor["resolution"])
+            ]
+        )
+
+        # if cfg.Code["distance_rectified_fov"]:
+        #     points_world = distance_rectified_fov(points3D)
+
         ## 3. Calculate the gradioents of x and y direction
         grad_x = np.gradient(time_refine_distances, axis=1)
         grad_y = np.gradient(time_refine_distances, axis=0)
@@ -177,22 +172,23 @@ def test():
         ## 5. Outliers detection
         plane1_index = outliers_detection(plane1_index, 4)
         plane2_index = outliers_detection(plane2_index, 4)
-        points_plane1 = np.array(
-            [[i, j, time_refine_distances[i, j]] for [i, j] in plane1_index]
-        )
-        points_plane2 = np.array(
-            [[i, j, time_refine_distances[i, j]] for [i, j] in plane2_index]
-        )
+        points_plane1 = np.array([points3D[i * 8 + j] for [i, j] in plane1_index])
+        points_plane2 = np.array([points3D[i * 8 + j] for [i, j] in plane2_index])
         ## 5. Plane fitting
         plane1 = Plane(np.array([0, 0, 1]), 0)
         plane2 = Plane(np.array([0, 0, 1]), 0)
         # plane1.fit_plane(points_plane1)
         # plane2.fit_plane(points_plane2)
-        plane1, error1 = plane1.ToF_RANSAC(points_plane1, res=cfg.Sensor["resolution"])
-        plane2, error2 = plane2.ToF_RANSAC(points_plane2, res=cfg.Sensor["resolution"])
+        # ToF_RANSAC will transfer the points to the world coordinate
+        plane1 = plane1.ToF_RANSAC(points_plane1, res=cfg.Sensor["resolution"])
+        plane2 = plane2.ToF_RANSAC(points_plane2, res=cfg.Sensor["resolution"])
         ## 6. Visualization
         fig = plt.figure(figsize=(14, 7))
-        two_plane_visualization(fig, plane1, plane2, points_plane1, points_plane2)
+        # Transfer the visulaization to the world coordinate
+        if cfg.Code["distance_rectified_fov"]:
+            points1 = distance_rectified_fov(points_plane1)
+            points2 = distance_rectified_fov(points_plane2)
+        two_plane_visualization(fig, plane1, plane2, points1, points2)
         plane1.ToF_visualization(
             fig,
             time_refine_distances,

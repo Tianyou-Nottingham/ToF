@@ -20,7 +20,7 @@ from direction_visualization import refine_by_time
 from read_data_utils import visualize2D, normalize
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
-import utils.distance_rectified_fov
+from utils.distance_rectified_fov import distance_rectified_fov
 
 
 class Plane:
@@ -34,7 +34,7 @@ class Plane:
         计算点到平面的距离
         平面方程: N * x + d = 0
         """
-        distance = np.abs(np.dot(self.N, point) - self.d)
+        distance = np.abs(np.dot(self.N, point) - self.d) ** 2
         return distance
 
     def solve_plane(self, A, B, C):
@@ -87,9 +87,9 @@ class Plane:
 
         self.N = soln.x[:3]
         self.d = soln.x[3]
-        self.error = np.sqrt(soln.fun)
+        self.error = np.sqrt(soln.fun / len(pts))
 
-        return self.N, self.d, self.error
+        return self
 
     def plane_visualization(self, fig, N, d, data, color="r"):
         """
@@ -102,8 +102,8 @@ class Plane:
         a, b, c = N
 
         # 创建网格 (x, y)
-        x = np.linspace(0, 8, 100)
-        y = np.linspace(0, 8, 100)
+        x = np.linspace(-100, 100, 100)
+        y = np.linspace(-100, 100, 100)
         X, Y = np.meshgrid(x, y)
 
         # 根据平面方程 N · X + d = 0 求解 z
@@ -160,39 +160,19 @@ class Plane:
             raise ValueError("The number of points should be more than 3.")
 
         pad_size = expansion_res // res
-        # expansion_data = np.zeros((pad_size, pad_size))
         [x_index, y_index, d_value] = [data[:, 0], data[:, 1], data[:, 2]]
-        # for i in range(len(data)):
-        #     expansion_data[int(x_index[i]*pad_size): int((x_index[i]+1)*pad_size),
-        #                    int(y_index[i]*pad_size): int((y_index[i]+1)*pad_size)] = d_value[i]
 
         best_plane = None
         best_error = np.inf
-        max_error = 10
-        max_iter = 1000
-        sigma = 0.4  ## 阈值
-        pretotal = 0  ## 内点个数
-        Per = 50000  ## 正确概率
+        iters = 1000
+        sigma = 3  ## 阈值
+        pre_inlier = 0  ## 内点个数
+        Per = 0.99  ## 正确概率
         k = 0
         while (
-            k < max_iter and pretotal < len(data) * 3 / 4  # and best_error > max_error
+            k < iters  # and best_error > max_error
         ):  # pretotal < len(data) *2/3: ## 当内点个数大于总点数的3/4 或 大于预设迭代次数时，停止迭代
-            point_offset = [
-                np.random.choice(pad_size, len(data)),
-                np.random.choice(pad_size, len(data)),
-            ]
-            points = []
-            for i in range(len(data)):
-                point = np.array(
-                    [
-                        x_index[i] + point_offset[0][i] / pad_size,
-                        y_index[i] + point_offset[1][i] / pad_size,
-                        d_value[i],
-                    ]
-                )
-                points.append(point)
-
-            # self.fit_plane(points)
+            ## 随机选择5个点, 拟合平面
             pts_index = data[np.random.choice(len(data), 5, replace=False)]
             pts = []
             for pt_index in pts_index:
@@ -205,11 +185,13 @@ class Plane:
                         ]
                     )
                 )
-
+            if cfg.Code["distance_rectified_fov"]:
+                pts = distance_rectified_fov(pts)
             # self.solve_plane(A, B, C)
             self.fit_plane(pts)
             total_inlier = 0
-            ## 只取一个点进行RANSAC
+            error = 0
+            ## 每个zones只取一个点进行RANSAC
             point_offset = [
                 np.random.choice(pad_size, len(data)),
                 np.random.choice(pad_size, len(data)),
@@ -222,20 +204,31 @@ class Plane:
                         d_value[i],
                     ]
                 )
-                if self.solve_distance(point) < sigma:
+                if cfg.Code["distance_rectified_fov"]:
+                    point = distance_rectified_fov(np.array([point]))[0]
+                point_res = self.solve_distance(point)
+                if point_res < sigma:
                     total_inlier += 1
-                self.error += self.solve_distance(point) ** 2
-
-            if total_inlier > pretotal:
+                    error += point_res**2
+            self.error = np.sqrt(error / total_inlier) if total_inlier > 0 else np.inf
+            if total_inlier > pre_inlier:
                 iters = np.log(1 - Per) / np.log(1 - pow(total_inlier / len(data), 5))
-                pretotal = total_inlier
-            if self.error < best_error:
+                pre_inlier = total_inlier
+            if self.error < best_error and self.error > 0:
                 best_error = self.error
-                best_plane = self
+                best_N = self.N
+                best_d = self.d
+                best_plane = Plane(best_N, best_d)
+                best_plane.error = best_error
+            ## 当内点个数大于总点数的3/4时，停止迭代
+            if total_inlier > len(data) * 3 / 4:
+                break
+
             k += 1
-            self.error = np.sqrt(self.error)
-            print(f"iter: {k}, total_inlier: {total_inlier}, error: {self.error}")
-        return best_plane, best_error
+            # print(
+            #     f"iter: {k}, total_inlier: {total_inlier}, plane: {self.N, self.d}, error: {self.error},  best_error: {best_error}"
+            # )
+        return best_plane
 
 
 def test():
@@ -261,25 +254,24 @@ def test():
         last_distances = distances
         last_sigma = sigma
         ## 2.1 Rectified the distance
-        if cfg["Code"]["distance_rectified_fov"]:
-            points3D = utils.distance_rectified_fov(
-            points3D)
+        if cfg.Code["distance_rectified_fov"]:
+            points_world = distance_rectified_fov(points3D)
         ## 3. ToF RANSAC
         plane = Plane(np.array([0, 0, 1]), 0)
-        # plane.ToF_RANSAC(points3D, cfg.Sensor["resolution"], 256)
-        plane.fit_plane(points3D)
+        best_plane = plane.ToF_RANSAC(points3D, cfg.Sensor["resolution"], 256)
+        # best_plane = plane.fit_plane(points_world)
+        print(f"Plane N: {best_plane.N}, d: {best_plane.d}. Error: {best_plane.error}")
         ## 4. Visualization
-
         depth, sigma = visualize2D(
             time_refine_distances,
             sigma,
             cfg.Sensor["resolution"],
             cfg.Sensor["output_shape"],
         )
-        print(f"Plane N: {plane.N}, d: {plane.d}. Error: {plane.error}")
+
         color_depth = cv2.applyColorMap(depth, cv2.COLORMAP_MAGMA)
         fig = plt.figure(figsize=(14, 7))
-        plane.plane_visualization(fig, plane.N, plane.d, points3D)
+        plane.plane_visualization(fig, plane.N, plane.d, points_world)
         plane.ToF_visualization(
             fig,
             time_refine_distances,

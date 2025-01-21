@@ -11,6 +11,7 @@ import h5py
 matplotlib.use("TkAgg", force=True)
 from scipy import interpolate
 import configs.config as cfg
+from utils.distance_rectified_fov import distance_rectified_fov
 
 
 # PythonDataStart
@@ -66,6 +67,37 @@ def read_serial_data(ser, res=8):
         raw_data = [ser.readline().strip() for _ in range(res)]
     distances, sigma = parse_data(raw_data)
     return distances, sigma  ## 8x8 array
+
+
+def refine_by_time(last_distances, last_sigma, distances, sigma, res=8):
+    refine_distance = np.zeros_like(distances)
+    refine_sigma = np.zeros_like(sigma)
+    for i in range(res):
+        for j in range(res):
+            if sigma[i][j] == 0:
+                refine_distance[i][j] = last_distances[i][j]
+                refine_sigma[i][j] = last_sigma[i][j]
+                continue
+            elif last_sigma[i][j] == 0:
+                refine_distance[i][j] = distances[i][j]
+                refine_sigma[i][j] = sigma[i][j]
+                continue
+            else:
+                refine_distance[i][j] = (
+                    last_distances[i][j] * sigma[i][j]
+                    + distances[i][j] * last_sigma[i][j]
+                ) / (sigma[i][j] + last_sigma[i][j])
+                refine_sigma[i][j] = (sigma[i][j] * last_sigma[i][j]) / (
+                    sigma[i][j] + last_sigma[i][j]
+                )
+    return refine_distance, refine_sigma
+
+
+def visualize3D(distances, sigma, res=8, output_shape=[640, 640], upsample=False):
+    for i in range(distances.shape()[0]):
+        for j in range(distances.shape()[1]):
+            plt.scatter(i, j, distances[i, j], c="r")
+    plt.show()
 
 
 def visualize2D(distances, sigma, res=8, output_shape=[640, 640], upsample=False):
@@ -144,19 +176,27 @@ if __name__ == "__main__":
         ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
         while True:
             distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
-            for i in range(distances.shape[0]):
-                for j in range(distances.shape[1]):
-                    if distances[i, j] > 1.5 and distances[i, j] < 450:
-                        if i in [0, 1, 6, 7] and j in [0, 1, 6, 7]:
-                            distances[i, j] *= cfg.Sensor["alpha_corner"]
-                        elif i in [0, 1, 6, 7] or j in [0, 1, 6, 7]:
-                            distances[i, j] *= cfg.Sensor["alpha_edge"]
-                        else:
-                            continue
-                    else:
-                        continue
-            # distances = normalize(distances)
+            points3D = np.array(
+                [
+                    [i, j, distances[i, j]]
+                    for i in range(cfg.Sensor["resolution"])
+                    for j in range(cfg.Sensor["resolution"])
+                ]
+            )
+            # # distances = normalize(distances)
             print(distances)
+            # if cfg.Code["distance_rectified_fov"]:
+            #     points_world = distance_rectified_fov(points3D)
+            # ax = plt.axes(projection="3d")
+            # ax.scatter(
+            #     points_world[:, 0], points_world[:, 1], points_world[:, 2], c="r"
+            # )
+            # ax.scatter(20 * points3D[:, 0], 20 * points3D[:, 1], points3D[:, 2], c="b")
+            # ax.set_xlabel("X")
+            # ax.set_ylabel("Y")
+            # ax.yaxis.set_transform(plt.gca().transAxes)
+            # ax.set_zlabel("Z")
+            # plt.show()
             depth_map, sigma_map = visualize2D(
                 distances,
                 sigma,
