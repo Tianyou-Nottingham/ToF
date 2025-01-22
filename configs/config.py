@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 Serial = {
     "port": "COM5",
@@ -25,4 +26,11 @@ Code = {
     "read_data": True,
     "obstacle_avoidance": True,
     "distance_rectified_fov": True,
+}
+RealSense = {
+    "K": np.array(
+        [[378.282, 0, 323.395],
+        [0, 378.282, 236.58],
+        [0, 0, 1],]
+    )
 }

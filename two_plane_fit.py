@@ -155,15 +155,15 @@ def test():
         #     points_world = distance_rectified_fov(points3D)
 
         ## 3. Calculate the gradioents of x and y direction
-        grad_x = np.gradient(time_refine_distances, axis=1)
-        grad_y = np.gradient(time_refine_distances, axis=0)
+        grad_y = np.gradient(time_refine_distances, axis=1)
+        grad_x = np.gradient(time_refine_distances, axis=0)
 
         ## 4. Divide the plane into two parts based on the angle
         plane1_index = []
         plane2_index = []
         for i in range(cfg.Sensor["resolution"]):
             for j in range(cfg.Sensor["resolution"]):
-                if grad_x[i][j] > 0:
+                if grad_y[i][j] > 0:
                     plane1_index.append([i, j])
                 else:
                     plane2_index.append([i, j])
