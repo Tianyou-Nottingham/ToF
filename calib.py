@@ -64,10 +64,10 @@ def find_line(img, corners, chessboard_size):
     lines_w = []
     lines_l = []
     for i in range(l):
-        line = [corners[i * w][0], corners[(i + 1) * w - 1][0]]
+        line = [corners[i * w], corners[(i + 1) * w - 1]]
         lines_w.append(line)  # 短边
     for j in range(w):
-        line = [corners[j][0], corners[(l - 1) * w + j][0]]
+        line = [corners[j], corners[(l - 1) * w + j]]
         lines_l.append(line)  # 长边
     # Draw the lines
     for line in lines_w:
@@ -244,7 +244,10 @@ def rs_capture_align(save=True):
             corner_detection_ret, corner_detection_img, points_w, points_i = (
                 corner_detection(color_usm)
             )
-
+            points_w, points_i = np.array(points_w), np.array(points_i)
+            points_w = points_w.reshape((-1, 3))
+            points_i = points_i.reshape((-1, 2))
+            print(f"Shape of w is {points_w.shape}, shape of i is {points_i.shape}")
             if corner_detection_ret == True:
                 ##### 3 Prepare ToF plane fitting #####
                 plane1 = Plane(np.array([0, 0, 1]), 0)
@@ -280,21 +283,25 @@ def rs_capture_align(save=True):
                 two_plane_visualization(fig, plane1, plane2, points1, points2)
 
                 ### 3.2 Realsense vanishing point calculation ####
-                ret, rvec, tvec = cv2.solvePnP(points_w, points_i, Intrinsic, None)
+                ret, rvec, tvec = cv2.solvePnP(
+                    points_w.astype("float32"),
+                    points_i.astype("float32"),
+                    Intrinsic,
+                    None,
+                )
                 R, _ = cv2.Rodrigues(rvec)
                 points_c = R @ points_w.T + tvec
                 points_c = points_c.T
-                print(f"points_c: {points_c}")
                 plane3 = plane3.fit_plane(points_c)
                 print(f"Plane3: N: {plane3.N}, d:{plane3.d}, error:{plane3.error}")
                 line_image, lines_w, lines_l = find_line(
-                    color_usm, points_i[0], chessboard_size
+                    color_usm, points_i, chessboard_size
                 )
                 vanishing_point_w = find_infinity_point(color_usm, lines_w)
                 vanishing_point_l = find_infinity_point(color_usm, lines_l)
-                print(
-                    f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}\n"
-                )
+                # print(
+                #     f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}\n"
+                # )
                 print(
                     f"Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}, Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}\n"
                 )
@@ -305,7 +312,7 @@ def rs_capture_align(save=True):
                         txt_name = os.path.join(save_path, "plane_fitting.txt")
                         with open(txt_name, "a") as f:
                             f.write(
-                                f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}.\n Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}\n Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}\n plane3c: N: {plane3.N}, d:{plane3.d},error:{plane3.error}"
+                                f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}. Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}; Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}; plane3c: N: {plane3.N}, d:{plane3.d},error:{plane3.error}\n"
                             )
                         pass
                     else:
