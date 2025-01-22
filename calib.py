@@ -250,8 +250,6 @@ def rs_capture_align(save=True):
                 plane1 = Plane(np.array([0, 0, 1]), 0)
                 plane2 = Plane(np.array([0, 0, 1]), 0)
                 plane3 = Plane(np.array([0, 0, 1]), 0)
-                print(points_w)
-                plane3 = plane3.fit_plane(points_w)
                 ##### 4. Visualization #####
                 cv2.imshow(
                     "RealSense live",
@@ -282,6 +280,13 @@ def rs_capture_align(save=True):
                 two_plane_visualization(fig, plane1, plane2, points1, points2)
 
                 ### 3.2 Realsense vanishing point calculation ####
+                ret, rvec, tvec = cv2.solvePnP(points_w, points_i, Intrinsic, None)
+                R, _ = cv2.Rodrigues(rvec)
+                points_c = R @ points_w.T + tvec
+                points_c = points_c.T
+                print(f"points_c: {points_c}")
+                plane3 = plane3.fit_plane(points_c)
+                print(f"Plane3: N: {plane3.N}, d:{plane3.d}, error:{plane3.error}")
                 line_image, lines_w, lines_l = find_line(
                     color_usm, points_i[0], chessboard_size
                 )
