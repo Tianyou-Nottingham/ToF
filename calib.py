@@ -18,6 +18,7 @@ Depth_path = r"C:\Users\ezxtz6\Pictures\Depth0.png"
 Intrinsic = cfg.RealSense["K"]
 chessboard_size = [7, 10]
 
+
 def normalize(value, vmin=0.0, vmax=4.0):
     # normalize
     vmin = value.min() if vmin is None else vmin
@@ -26,9 +27,10 @@ def normalize(value, vmin=0.0, vmax=4.0):
         value = (value - vmin) / (vmax - vmin)  # vmin..vmax
     else:
         # Avoid 0-division
-        value = value * 0.
-    value = (value*255.0).astype(np.uint8)
+        value = value * 0.0
+    value = (value * 255.0).astype(np.uint8)
     return value
+
 
 def corner_detection(img):
     Grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -63,10 +65,10 @@ def find_line(img, corners, chessboard_size):
     lines_l = []
     for i in range(l):
         line = [corners[i * w][0], corners[(i + 1) * w - 1][0]]
-        lines_w.append(line) # 短边
+        lines_w.append(line)  # 短边
     for j in range(w):
         line = [corners[j][0], corners[(l - 1) * w + j][0]]
-        lines_l.append(line) # 长边
+        lines_l.append(line)  # 长边
     # Draw the lines
     for line in lines_w:
         img = cv2.line(
@@ -125,7 +127,7 @@ def find_infinity_point(img, lines):
 def rs_capture_align(save=True):
     # 创建realsense pipeline 以及 serial
     pipeline = rs.pipeline()
-    
+
     ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
     last_distances = np.zeros((cfg.Sensor["resolution"], cfg.Sensor["resolution"]))
     last_sigma = np.ones((cfg.Sensor["resolution"], cfg.Sensor["resolution"]))
@@ -199,7 +201,9 @@ def rs_capture_align(save=True):
                 cfg.Sensor["resolution"],
                 cfg.Sensor["output_shape"],
             )
-            ToF_depth_map = cv2.applyColorMap(normalize(ToF_depth_map), cv2.COLORMAP_MAGMA)
+            ToF_depth_map = cv2.applyColorMap(
+                normalize(ToF_depth_map), cv2.COLORMAP_MAGMA
+            )
 
             ##### 2. Image and ToF data processing #####
             #### 2.1 ToF data processing ####
@@ -246,6 +250,7 @@ def rs_capture_align(save=True):
                 plane1 = Plane(np.array([0, 0, 1]), 0)
                 plane2 = Plane(np.array([0, 0, 1]), 0)
                 plane3 = Plane(np.array([0, 0, 1]), 0)
+                print(points_w)
                 plane3 = plane3.fit_plane(points_w)
                 ##### 4. Visualization #####
                 cv2.imshow(
@@ -277,7 +282,9 @@ def rs_capture_align(save=True):
                 two_plane_visualization(fig, plane1, plane2, points1, points2)
 
                 ### 3.2 Realsense vanishing point calculation ####
-                line_image, lines_w, lines_l = find_line(color_usm, points_i[0], chessboard_size)
+                line_image, lines_w, lines_l = find_line(
+                    color_usm, points_i[0], chessboard_size
+                )
                 vanishing_point_w = find_infinity_point(color_usm, lines_w)
                 vanishing_point_l = find_infinity_point(color_usm, lines_l)
                 print(
@@ -293,18 +300,15 @@ def rs_capture_align(save=True):
                         txt_name = os.path.join(save_path, "plane_fitting.txt")
                         with open(txt_name, "a") as f:
                             f.write(
-                                f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}.\n
-                                  Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}\n 
-                                  Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}\n
-                                  plane3c: N: {plane3.N}, d:{plane3.d},error:{plane3.error}"
+                                f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}.\n Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}\n Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}\n plane3c: N: {plane3.N}, d:{plane3.d},error:{plane3.error}"
                             )
                         pass
                     else:
                         pass
+
                 # 将回调函数与图形对象绑定
                 fig.canvas.mpl_connect("key_press_event", on_key_press)
                 plt.show()
-                
 
             ##### 4. Visualization #####
             else:
@@ -323,7 +327,8 @@ def rs_capture_align(save=True):
                     # 彩色图片保存为png格式
                     cv2.imwrite(
                         os.path.join(
-                            (save_path), "color", "{}.png".format(saved_count)),
+                            (save_path), "color", "{}.png".format(saved_count)
+                        ),
                         saved_color_image,
                     )
                     # 深度信息由采集到的float16直接保存为npy格式
@@ -397,21 +402,22 @@ def main():
     print(f"Vanishing Point Horizontal: {vanishing_point_horizontal}")
     print(f"Vanishing Point Vertical: {vanishing_point_vertical}")
 
+
 def read_N_and_Vp(file_path):
-    # <built-in function localtime>: 
-    # Vanishing Point Horizontal: [-561.14966641  510.21300619    1.        ], 
-    # Vertical: [659.72555736 402.49584642   1.        ]. 
-    # Plane1: N: [-0.18446338 -0.36972649  0.91064569], d:446.8080933309752, error:0.002568954238524618, 
+    # <built-in function localtime>:
+    # Vanishing Point Horizontal: [-561.14966641  510.21300619    1.        ],
+    # Vertical: [659.72555736 402.49584642   1.        ].
+    # Plane1: N: [-0.18446338 -0.36972649  0.91064569], d:446.8080933309752, error:0.002568954238524618,
     # Plane2: N: [-0.07672262  0.78625689  0.61311805], d:369.9294947441689,error:7.191378483069497e-05
     vp_w = []
     vp_l = []
     plane1_N = []
     plane2_N = []
-    with open(file_path, 'r') as f:
+    with open(file_path, "r") as f:
         lines = f.readlines()
         for line in lines:
-            temp = re.split('\[|\]', line)
-            vp_w.append([float(i) for i in temp[1].split()]) 
+            temp = re.split("\[|\]", line)
+            vp_w.append([float(i) for i in temp[1].split()])
             vp_l.append([float(i) for i in temp[3].split()])
             plane1_N.append([float(i) for i in temp[5].split()])
             plane2_N.append([float(i) for i in temp[7].split()])
@@ -424,6 +430,7 @@ def read_N_and_Vp(file_path):
     # print(f"Plane1: N: {plane1_N}")
     # print(f"Plane2: N: {plane2_N}")
     return vp_w, vp_l, plane1_N, plane2_N
+
 
 def calib_by_N_and_Vp(cfg, Vp1, Vp2, N1, N2):
     """
@@ -440,7 +447,7 @@ def calib_by_N_and_Vp(cfg, Vp1, Vp2, N1, N2):
     d2_orient_vec = K_Vp2 / np.linalg.norm(K_Vp2, axis=0)
     # 由于RealSense 是倒着放的，所以Camera坐标系差一个绕z轴的180度
     # 实际操作的时候，RealSense的color image和depth都应该反转过来。
-    # 可以相当于将Realsense 的坐标系乘上一个[[-1, 0, 0],[0, 1, 0], [0, 0, -1]] 
+    # 可以相当于将Realsense 的坐标系乘上一个[[-1, 0, 0],[0, 1, 0], [0, 0, -1]]
     # 这里没有翻转图像，所以R乘上一个[[-1, 0, 0],[0, 1, 0], [0, 0, -1]]
     R_reverse = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
     d = np.hstack((d1_orient_vec, d2_orient_vec))
@@ -456,11 +463,11 @@ def calib_by_N_and_Vp(cfg, Vp1, Vp2, N1, N2):
     #     R[:, -1] = -R[:, -1]
     print(f"R: {R}")
     return R
-    
+
+
 if __name__ == "__main__":
-    # rs_capture_align()
-    file_path = r"D:\Downloads\ToF\calib\2025_01_20_21_04_24\plane_fitting.txt"
-    Vp1, Vp2, N1, N2 = read_N_and_Vp(file_path)
-    R = calib_by_N_and_Vp(cfg, Vp1, Vp2, N1, N2)
+    rs_capture_align()
+    # file_path = r"D:\Downloads\ToF\calib\2025_01_20_21_04_24\plane_fitting.txt"
+    # Vp1, Vp2, N1, N2 = read_N_and_Vp(file_path)
+    # R = calib_by_N_and_Vp(cfg, Vp1, Vp2, N1, N2)
     # Visualization of the rotation matrix
-    
