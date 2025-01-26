@@ -4,6 +4,7 @@ import pyrealsense2 as rs
 import os
 import time
 import serial
+import scipy
 from TOF_RANSAC import Plane
 from read_data_utils import read_serial_data, refine_by_time, visualize2D
 import configs.config as cfg
@@ -33,6 +34,10 @@ def normalize(value, vmin=0.0, vmax=4.0):
 
 
 def corner_detection(img):
+    '''
+    棋盘格角点检测
+    return ret, img_color, points_w, points_i
+    '''
     img_color = img
     Grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     objpoints = np.zeros((chessboard_size[0] * chessboard_size[1], 3), np.float32)
@@ -61,6 +66,7 @@ def corner_detection(img):
 
 def contours_detection(img_color):
     '''
+    靶标轮廓检测
     return ret, img_color, contours
     '''
     imgray = cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY)
@@ -89,6 +95,10 @@ def contours_detection(img_color):
 
 
 def find_line(img, corners, chessboard_size):
+    '''
+    棋盘格线检测
+    return img, lines_w, lines_l
+    '''
     w, l = chessboard_size
     lines_w = []
     lines_l = []
@@ -487,7 +497,8 @@ def read_N_and_Vp(file_path):
     plane2_d = []
     plane3_N = []
     plane3_d = []
-    points = []
+    line13 = []
+    line23 = []
     with open(file_path, "r") as f:
         lines = f.readlines()
 
@@ -516,20 +527,34 @@ def read_N_and_Vp(file_path):
                 # temp = re.split("\[|\]|:", line).strip()
                 numbers = line.replace("Contours:", "").replace("[", "").replace("]", " ").split()
                 numbers = np.array(list(map(int, numbers))).reshape(-1,2)  # 转换为整数
-                # 寻找最靠近原点的点 
-                # TODO: 不能这么搞
-                d = [numbers[i][0] ** 2 + numbers[i][1] ** 2 for i in range(len(numbers))]
-                o = np.argmin(d)
-                oo = np.argmax(d)
-                
-                # 计算除oo点外另外两点与o点的直线参数
-                intersection_lines = []  # 存储每条直线的 (a, b, c)
-                for i in range(len(numbers)):
-                    if i != oo and i != o:
-                        a = numbers[i][1] - numbers[o][1]
-                        b = numbers[o][0] - numbers[i][0]
-                        c = numbers[i][0] * numbers[o][1] - numbers[o][0] * numbers[i][1]
-                        intersection_lines.append((a, b, c))
+                # 寻找最靠近原点的两条直线
+                top = numbers[np.argmin(numbers[:, 1])]
+                left = numbers[np.argmin(numbers[:, 0])]
+                right = numbers[np.argmax(numbers[:, 0])]
+                # 转换到归一化平面
+                ux, uy = Intrinsic[0, 2], Intrinsic[1, 2]
+                fx, fy = Intrinsic[0, 0], Intrinsic[1, 1]
+                top = [(top[0] - ux) / fx, (top[1] - uy) / fy]
+                left = [(left[0] - ux) / fx, (left[1] - uy) / fy]
+                right = [(right[0] - ux) / fx, (right[1] - uy) / fy]
+                points13 = [top, left]
+                points23 = [top, right]
+
+                # 直线方程ax+by+c=0 (a,b,c)
+                a13 = points13[1][1] - points13[0][1]
+                b13 = points13[0][0] - points13[1][0]
+                c13 = points13[0][1] * points13[1][0] - points13[0][0] * points13[1][1]
+                a23 = points23[1][1] - points23[0][1]
+                b23 = points23[0][0] - points23[1][0]
+                c23 = points23[0][1] * points23[1][0] - points23[0][0] * points23[1][1]
+                # a13 = a13 / np.linalg.norm([a13, b13])
+                # b13 = b13 / np.linalg.norm([a13, b13])
+                # c13 = c13 / np.linalg.norm([a13, b13])
+                # a23 = a23 / np.linalg.norm([a23, b23])
+                # b23 = b23 / np.linalg.norm([a23, b23])
+                # c23 = c23 / np.linalg.norm([a23, b23])
+                line13.append([a13, b13, c13])
+                line23.append([a23, b23, c23])
                                     
     vp_w = np.array(vp_w)
     vp_l = np.array(vp_l)
@@ -539,12 +564,13 @@ def read_N_and_Vp(file_path):
     plane2_d = np.array(plane2_d)
     plane3_N = np.array(plane3_N)
     plane3_d = np.array(plane3_d)
-    intersection_lines = np.array(intersection_lines)
+    line13 = np.array(line13)
+    line23 = np.array(line23)
     # print(f"Vanishing Point Horizontal: {vp_horizontal}")
     # print(f"Vanishing Point Vertical: {vp_vertical}")
     # print(f"Plane1: N: {plane1_N}")
     # print(f"Plane2: N: {plane2_N}")
-    return vp_w, vp_l, plane1_N, plane1_d, plane2_N, plane2_d, plane3_N, plane3_d, intersection_lines
+    return vp_w, vp_l, plane1_N, plane1_d, plane2_N, plane2_d, plane3_N, plane3_d, line13, line23
 
 
 def calib_R(cfg, Vp1, Vp2, N1, N2):
@@ -564,15 +590,15 @@ def calib_R(cfg, Vp1, Vp2, N1, N2):
     # 实际操作的时候，RealSense的color image和depth都应该反转过来。
     # 可以相当于将Realsense 的坐标系乘上一个[[-1, 0, 0],[0, 1, 0], [0, 0, -1]]
     # 这里没有翻转图像，所以R乘上一个[[-1, 0, 0],[0, 1, 0], [0, 0, -1]]
-    R_reverse = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
+    # R_reverse = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
     d = np.hstack((d1_orient_vec, d2_orient_vec))
-    print(f"d shape: {d.shape}")
+    # print(f"d shape: {d.shape}")
     N = np.vstack((N2, N1))
-    print(f"N shape: {N.shape}")
+    # print(f"N shape: {N.shape}")
     S = N.T @ d.T
-    print(f"S shape: {S.shape}")
+    # print(f"S shape: {S.shape}")
     U, S_, V = np.linalg.svd(S)
-    R = V @ U.T @ R_reverse
+    R = V @ U.T #@ R_reverse
     # 矫正R的行列式为1
     if np.linalg.det(R) < 0:
         R[:, -1] = -R[:, -1]
@@ -580,55 +606,45 @@ def calib_R(cfg, Vp1, Vp2, N1, N2):
     return R
 
 
-def calib_T(cfg, R, N1, d1, N2, d2, N3, d3):
+def calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23):
     """
     Here, N is a nx3 vector, d is a n*1 scalar.
     """
+    # 交换N的x y
+    N1 = N1[:, [1, 0, 2]]
+    N2 = N2[:, [1, 0, 2]]
     K = cfg.RealSense["K"]
-    N1_c = np.array(R.T @ N1.T)  ## nx3
+    np_13 = line13 / np.linalg.norm(line13, axis=1).reshape(-1, 1)
+    np_23 = line23 / np.linalg.norm(line23, axis=1).reshape(-1, 1)
+
+    N1_c = np.array(N1 @ R.T).T  ## 3xn
     # d1_c = d1 - N1_c @ t ## here contains the translation, which is unknown
-    N2_c = np.array(R.T @ N2.T)  ## nx3
-    # d2_c = d2 - N2_c @ t
-    # O_A = np.array(N1_c, N2_c, N3) ## 3x3
-    # O_b = -np.array(d1_c, d2_c, d3) ## 3x1
-    # O = np.linalg.solve( O_A, O_b)
-    # if we know the l13 and l23, which are the intersection of the plane1 and plane2, plane2 and plane3
-    # The generated plane by l13 and C has the normal vector v_13, so the plane is [v_13, 0]
-    # v_13.T @ O = 0
-    # So we get:
-    t_B = []
+    N2_c = np.array(N2 @ R.T).T  ## 3xn
+
+    N = np.hstack((N1_c, N2_c, N3.T))  ## 3*3n
+    v0 = np.zeros((3, len(N1)))
+    M = np.hstack((N1_c, N2_c, v0))  ## 3*3n
+    d = np.hstack((d1, d2, d3))  ## 3*3n
     t_A = []
+    t_B = []
     for i in range(len(N1)):
-        # A = np.array([N1_c[i].T, N2_c[i].T, N3[i]])
-        # d = np.array([d1[i], d2[i], d3[i]]).T
-        # b = np.linalg.solve(A, d)
-        b = np.array([d1[i], d2[i], d3[i]]).reshape((-1, 1))
-        t_B.append(b[:2])  ## n*3*3
-        A = np.array([N1_c[:, i].T, N2_c[:, i].T, [0, 0, 0]])
-        t_A.append(A[:2])
+        N_i = np.array([N1_c[:, i].T, N2_c[:, i].T, N3[i,:]])
+        M_i = np.array([N1_c[:, i].T, N2_c[:, i].T, [0, 0, 0]])
+        A = np_13[i,:] @ np.linalg.inv(N_i) @ M_i
+        t_A.append(A)
+        d_i = np.array([d1[i], d2[i], d3[i]]).reshape((-1, 1))
+        b = np_13[i,:] @ np.linalg.inv(N_i) @ d_i
+        t_B.append(b)
+        # 再算line23
+        A = np_23[i,:] @ np.linalg.inv(N_i) @ M_i
+        t_A.append(A)
+        b = np_23[i,:] @ np.linalg.inv(N_i) @ d_i
+        t_B.append(b)
+
     t_A = np.array(t_A).reshape((-1, 3))  # 3n*3
     t_B = np.array(t_B).reshape((-1, 1))  # 3n*1
-    print(f"t_A shape: {t_A.shape}, t_B shape: {t_B.shape}")
 
-    def svd(M, b):
-        # numpy svd 工具求得的d是一个只有奇异值的向量,而不是公式中的矩阵
-        u, d, v = np.linalg.svd(M)
-        c = np.dot(u.T, b)
-        # 接下来是真正求得公式中的d
-        tmp = np.zeros((M.shape[0], M.shape[1]))
-        for i in range(0, len(d)):
-            tmp[i][i] = d[i]
-        d = tmp
-        for i in range(0, d.shape[0]):
-            for j in range(0, d.shape[1]):
-                if d[i][j] != 0:
-                    d[i][j] = 1 / d[i][j]
-        w = d.T.dot(c)
-        a = np.dot(v.T, w)
-        return a
-
-    # U: 3n*3n, S_: 3, V: 3*3
-    t = svd(t_A, t_B)
+    t = np.linalg.lstsq(t_A, t_B, rcond=None)[0]
     print(f"t: {t}")
     return t
 
@@ -725,9 +741,10 @@ def find_contours_TEST():
 if __name__ == "__main__":
     # rs_capture_align()
 
-    file_path = r"E:\Projects\ToF\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
-    Vp1, Vp2, N1, d1, N2, d2, N3, d3, intersection_lines = read_N_and_Vp(file_path)
+    file_path = r"D:\Downloads\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
+    Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
+    # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
     R = calib_R(cfg, Vp1, Vp2, N1, N2)
-    t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3)
+    t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
 
     # find_contours_TEST()
