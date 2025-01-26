@@ -33,6 +33,7 @@ def normalize(value, vmin=0.0, vmax=4.0):
 
 
 def corner_detection(img):
+    img_color = img
     Grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     objpoints = np.zeros((chessboard_size[0] * chessboard_size[1], 3), np.float32)
     objpoints[:, :2] = np.mgrid[
@@ -52,11 +53,39 @@ def corner_detection(img):
         )
         points_w.append(objpoints)
         points_i.append(corners)
-        cv2.drawChessboardCorners(img, chessboard_size, corners, ret)
+        cv2.drawChessboardCorners(img_color, chessboard_size, corners, ret)
         # cv2.imshow("RGB", img)
         # cv2.imwrite("./RGB_corners.png", img)
         # cv2.waitKey(0)
-    return ret, img, points_w, points_i
+    return ret, img_color, points_w, points_i
+
+def contours_detection(img_color):
+    '''
+    return ret, img_color, contours
+    '''
+    imgray = cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY)
+    contour_img = img_color
+    ret, thresh = cv2.threshold(imgray, 127, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # cv2.imshow("img", thresh)
+    # cv2.waitKey(0)
+    contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    # 查找靶标最外层轮廓
+    if contours is not None:
+        for i in range(len(hierarchy[0])):
+            if hierarchy[0][i][2] == 2:
+                # 只画出最外层的第一级子轮廓
+                cv2.drawContours(contour_img, contours, i, (0, 255, 0), 3)
+                # 只保存矩形四个顶点坐标
+                simplified_contours  = cv2.approxPolyDP(contours[i], 0.02 * cv2.arcLength(contours[i], True), True)
+                if len(simplified_contours) == 4:
+                    left = simplified_contours[0][0]
+                    right = simplified_contours[2][0]
+                    top = simplified_contours[1][0]
+                    bottom = simplified_contours[3][0]
+                box = np.array([left, right, top, bottom])
+                print(f"Contours detection: True")
+                return True, contour_img, box
+    return False, contour_img, None
 
 
 def find_line(img, corners, chessboard_size):
@@ -244,31 +273,38 @@ def rs_capture_align(save=True):
             corner_detection_ret, corner_detection_img, points_w, points_i = (
                 corner_detection(color_usm)
             )
-            points_w, points_i = np.array(points_w), np.array(points_i)
+             ## 棋盘格尺寸15mm,points_w所有值×15mm
+            points_w = np.array(points_w) * 15
+            points_i = np.array(points_i) 
             points_w = points_w.reshape((-1, 3))
             points_i = points_i.reshape((-1, 2))
-            print(f"Shape of w is {points_w.shape}, shape of i is {points_i.shape}")
+            # print(f"Shape of w is {points_w.shape}, shape of i is {points_i.shape}")
+
             if corner_detection_ret == True:
-                ##### 3 Prepare ToF plane fitting #####
-                plane1 = Plane(np.array([0, 0, 1]), 0)
-                plane2 = Plane(np.array([0, 0, 1]), 0)
-                plane3 = Plane(np.array([0, 0, 1]), 0)
-                ##### 4. Visualization #####
-                cv2.imshow(
-                    "RealSense live",
-                    np.hstack((corner_detection_img, depth_mapped_image)),
-                )
+                ##### 检测轮廓 #####
+                ret_contour, contours_detection_img, contour = (contours_detection(color_usm))
+                if ret_contour == True:
+                    # cv2.drawContours(corner_detection_img, contour, -1, (0, 255, 0), 2)
+                    ##### 3 Prepare ToF plane fitting #####
+                    plane1 = Plane(np.array([0, 0, 1]), 0)
+                    plane2 = Plane(np.array([0, 0, 1]), 0)
+                    plane3 = Plane(np.array([0, 0, 1]), 0)
+                    ##### 4. Visualization #####
+                    cv2.imshow(
+                        "RealSense live",
+                        np.hstack((contours_detection_img, depth_mapped_image)),
+                    )
 
-                cv2.imshow("ToF live", ToF_depth_map)
-                key = cv2.waitKey(10)
+                    cv2.imshow("ToF live", ToF_depth_map)
+                    # key = cv2.waitKey(30)
 
-                #### 3.1 Plane fitting ####
-                plane1 = plane1.ToF_RANSAC(points_plane1, res=cfg.Sensor["resolution"])
-                plane2 = plane2.ToF_RANSAC(points_plane2, res=cfg.Sensor["resolution"])
+                    #### 3.1 Plane fitting ####
+                    plane1 = plane1.ToF_RANSAC(points_plane1, res=cfg.Sensor["resolution"])
+                    plane2 = plane2.ToF_RANSAC(points_plane2, res=cfg.Sensor["resolution"])
 
-                fig = plt.figure(figsize=(14, 7))
+                    fig = plt.figure(figsize=(14, 7))
 
-                plane1.ToF_visualization(
+                    plane1.ToF_visualization(
                     fig,
                     time_refine_distances,
                     time_refine_sigma,
@@ -276,59 +312,75 @@ def rs_capture_align(save=True):
                     cfg.Sensor["output_shape"],
                 )
 
-                if cfg.Code["distance_rectified_fov"]:
-                    points1 = distance_rectified_fov(points_plane1)
-                    points2 = distance_rectified_fov(points_plane2)
+                    if cfg.Code["distance_rectified_fov"]:
+                        points1 = distance_rectified_fov(points_plane1)
+                        points2 = distance_rectified_fov(points_plane2)
 
-                two_plane_visualization(fig, plane1, plane2, points1, points2)
+                    two_plane_visualization(fig, plane1, plane2, points1, points2)
 
-                ### 3.2 Realsense vanishing point calculation ####
-                ret, rvec, tvec = cv2.solvePnP(
-                    points_w.astype("float32"),
-                    points_i.astype("float32"),
-                    Intrinsic,
-                    None,
-                )
-                R, _ = cv2.Rodrigues(rvec)
-                points_c = R @ points_w.T + tvec
-                points_c = points_c.T
-                plane3 = plane3.fit_plane(points_c)
-                print(f"Plane3: N: {plane3.N}, d:{plane3.d}, error:{plane3.error}")
-                line_image, lines_w, lines_l = find_line(
-                    color_usm, points_i, chessboard_size
-                )
-                vanishing_point_w = find_infinity_point(color_usm, lines_w)
-                vanishing_point_l = find_infinity_point(color_usm, lines_l)
-                # print(
-                #     f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}\n"
-                # )
-                print(
-                    f"Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}, Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}\n"
-                )
+                    ### 3.2 Realsense vanishing point calculation ####
+                    ret, rvec, tvec = cv2.solvePnP(
+                        points_w.astype("float32"),
+                        points_i.astype("float32"),
+                        Intrinsic,
+                        None,
+                    )
+                    R, _ = cv2.Rodrigues(rvec)
+                    points_c = R @ points_w.T + tvec
+                    points_c = points_c.T
+                    plane3 = plane3.fit_plane(points_c)
+                    # print(f"Plane3: N: {plane3.N}, d:{plane3.d}, error:{plane3.error}")
+                    line_image, lines_w, lines_l = find_line(
+                        color_usm, points_i, chessboard_size
+                    )
+                    vanishing_point_w = find_infinity_point(color_usm, lines_w)
+                    vanishing_point_l = find_infinity_point(color_usm, lines_l)
+                    # print(
+                    #     f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}\n"
+                    # )
+                    # print(
+                    #     f"Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}, Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}\n"
+                    # )
 
-                # Save the plane fitting result and vanishing points to .txt file
-                def on_key_press(event):
-                    if event.key == "p":
-                        txt_name = os.path.join(save_path, "plane_fitting.txt")
-                        with open(txt_name, "a") as f:
-                            f.write(
-                                f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}. Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}; Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}; plane3c: N: {plane3.N}, d:{plane3.d},error:{plane3.error}\n"
-                            )
-                        pass
-                    else:
-                        pass
+                    # Save the plane fitting result and vanishing points to .txt file
+                    def on_key_press(event):
+                        if event.key == "p":
+                            txt_name = os.path.join(save_path, "plane_fitting.txt")
+                            with open(txt_name, "a") as f:
+                                f.write(
+                                    f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}.\n "
+                                    f"Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}; \n"
+                                    f"Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}; \n"
+                                    f"Plane3c: N: {plane3.N}, d:{plane3.d},error:{plane3.error}. \n"
+                                    f"Contours: {contour}\n"
+                                ); 
+                            pass
+                        else:
+                            pass
 
-                # 将回调函数与图形对象绑定
-                fig.canvas.mpl_connect("key_press_event", on_key_press)
-                plt.show()
+                    # 将回调函数与图形对象绑定
+                    fig.canvas.mpl_connect("key_press_event", on_key_press)
+                    plt.show()
+                else:
+                    print(f"Contours detection: False")
+                    cv2.imshow(
+                        "RealSense live",
+                        np.hstack((corner_detection_img, depth_mapped_image)),
+                    )
+                    cv2.imshow("ToF live", ToF_depth_map)
+                    # key = cv2.waitKey(30)
 
+                    
             ##### 4. Visualization #####
             else:
+                print(f"Contours detection: False")
                 cv2.imshow(
                     "RealSense live", np.hstack((color_image, depth_mapped_image))
                 )
                 cv2.imshow("ToF live", ToF_depth_map)
-                key = cv2.waitKey(30)
+                # key = cv2.waitKey(30)
+
+            key = cv2.waitKey(30)
 
             if save == True:
                 # s 保存图片
@@ -421,30 +473,81 @@ def read_N_and_Vp(file_path):
     # Vertical: [659.72555736 402.49584642   1.        ].
     # Plane1: N: [-0.18446338 -0.36972649  0.91064569], d:446.8080933309752, error:0.002568954238524618,
     # Plane2: N: [-0.07672262  0.78625689  0.61311805], d:369.9294947441689,error:7.191378483069497e-05
+    # Plane3c: N: [-0.0984395  -0.11629218  1.        ], d:371.8351350696706,error:100.72944821859248. 
+    # Contours: [[184 137]
+    #  [527 157]
+    #  [346   3]
+    #  [372 231]]
+
     vp_w = []
     vp_l = []
     plane1_N = []
+    plane1_d = []
     plane2_N = []
+    plane2_d = []
+    plane3_N = []
+    plane3_d = []
+    points = []
     with open(file_path, "r") as f:
         lines = f.readlines()
+
         for line in lines:
-            temp = re.split("\[|\]", line)
-            vp_w.append([float(i) for i in temp[1].split()])
-            vp_l.append([float(i) for i in temp[3].split()])
-            plane1_N.append([float(i) for i in temp[5].split()])
-            plane2_N.append([float(i) for i in temp[7].split()])
+            if "Vanishing Point" in line:
+                temp = re.split("\[|\]", line)
+                vp_w.append([float(i) for i in temp[1].split()])
+                vp_l.append([float(i) for i in temp[3].split()])
+            elif "Plane1" in line:
+                temp = re.split("\[|\]|:", line)
+                plane1_N.append([float(i) for i in temp[3].split()])
+                plane1_d.append(float(re.split(",", temp[5])[0]))
+            elif "Plane2" in line:
+                temp = re.split("\[|\]|:", line)
+                plane2_N.append([float(i) for i in temp[3].split()])
+                plane2_d.append(float(re.split(",", temp[5])[0]))
+            elif "Plane3c" in line:
+                temp = re.split("\[|\]|:", line)
+                plane3_N.append([float(i) for i in temp[3].split()])
+                plane3_d.append(float(re.split(",", temp[5])[0]))
+            elif "Contours" in line:
+                # Contours: [[184 137]
+                #  [527 157]
+                #  [346   3]
+                #  [372 231]]
+                # temp = re.split("\[|\]|:", line).strip()
+                numbers = line.replace("Contours:", "").replace("[", "").replace("]", " ").split()
+                numbers = np.array(list(map(int, numbers))).reshape(-1,2)  # 转换为整数
+                # 寻找最靠近原点的点 
+                # TODO: 不能这么搞
+                d = [numbers[i][0] ** 2 + numbers[i][1] ** 2 for i in range(len(numbers))]
+                o = np.argmin(d)
+                oo = np.argmax(d)
+                
+                # 计算除oo点外另外两点与o点的直线参数
+                intersection_lines = []  # 存储每条直线的 (a, b, c)
+                for i in range(len(numbers)):
+                    if i != oo and i != o:
+                        a = numbers[i][1] - numbers[o][1]
+                        b = numbers[o][0] - numbers[i][0]
+                        c = numbers[i][0] * numbers[o][1] - numbers[o][0] * numbers[i][1]
+                        intersection_lines.append((a, b, c))
+                                    
     vp_w = np.array(vp_w)
     vp_l = np.array(vp_l)
     plane1_N = np.array(plane1_N)
+    plane1_d = np.array(plane1_d)
     plane2_N = np.array(plane2_N)
+    plane2_d = np.array(plane2_d)
+    plane3_N = np.array(plane3_N)
+    plane3_d = np.array(plane3_d)
+    intersection_lines = np.array(intersection_lines)
     # print(f"Vanishing Point Horizontal: {vp_horizontal}")
     # print(f"Vanishing Point Vertical: {vp_vertical}")
     # print(f"Plane1: N: {plane1_N}")
     # print(f"Plane2: N: {plane2_N}")
-    return vp_w, vp_l, plane1_N, plane2_N
+    return vp_w, vp_l, plane1_N, plane1_d, plane2_N, plane2_d, plane3_N, plane3_d, intersection_lines
 
 
-def calib_by_N_and_Vp(cfg, Vp1, Vp2, N1, N2):
+def calib_R(cfg, Vp1, Vp2, N1, N2):
     """
     通过N和Vp计算相机内参
     """
@@ -471,15 +574,160 @@ def calib_by_N_and_Vp(cfg, Vp1, Vp2, N1, N2):
     U, S_, V = np.linalg.svd(S)
     R = V @ U.T @ R_reverse
     # 矫正R的行列式为1
-    # if np.linalg.det(R) < 0:
-    #     R[:, -1] = -R[:, -1]
+    if np.linalg.det(R) < 0:
+        R[:, -1] = -R[:, -1]
     print(f"R: {R}")
     return R
 
 
+def calib_T(cfg, R, N1, d1, N2, d2, N3, d3):
+    """
+    Here, N is a nx3 vector, d is a n*1 scalar.
+    """
+    K = cfg.RealSense["K"]
+    N1_c = np.array(R.T @ N1.T)  ## nx3
+    # d1_c = d1 - N1_c @ t ## here contains the translation, which is unknown
+    N2_c = np.array(R.T @ N2.T)  ## nx3
+    # d2_c = d2 - N2_c @ t
+    # O_A = np.array(N1_c, N2_c, N3) ## 3x3
+    # O_b = -np.array(d1_c, d2_c, d3) ## 3x1
+    # O = np.linalg.solve( O_A, O_b)
+    # if we know the l13 and l23, which are the intersection of the plane1 and plane2, plane2 and plane3
+    # The generated plane by l13 and C has the normal vector v_13, so the plane is [v_13, 0]
+    # v_13.T @ O = 0
+    # So we get:
+    t_B = []
+    t_A = []
+    for i in range(len(N1)):
+        # A = np.array([N1_c[i].T, N2_c[i].T, N3[i]])
+        # d = np.array([d1[i], d2[i], d3[i]]).T
+        # b = np.linalg.solve(A, d)
+        b = np.array([d1[i], d2[i], d3[i]]).reshape((-1, 1))
+        t_B.append(b[:2])  ## n*3*3
+        A = np.array([N1_c[:, i].T, N2_c[:, i].T, [0, 0, 0]])
+        t_A.append(A[:2])
+    t_A = np.array(t_A).reshape((-1, 3))  # 3n*3
+    t_B = np.array(t_B).reshape((-1, 1))  # 3n*1
+    print(f"t_A shape: {t_A.shape}, t_B shape: {t_B.shape}")
+
+    def svd(M, b):
+        # numpy svd 工具求得的d是一个只有奇异值的向量,而不是公式中的矩阵
+        u, d, v = np.linalg.svd(M)
+        c = np.dot(u.T, b)
+        # 接下来是真正求得公式中的d
+        tmp = np.zeros((M.shape[0], M.shape[1]))
+        for i in range(0, len(d)):
+            tmp[i][i] = d[i]
+        d = tmp
+        for i in range(0, d.shape[0]):
+            for j in range(0, d.shape[1]):
+                if d[i][j] != 0:
+                    d[i][j] = 1 / d[i][j]
+        w = d.T.dot(c)
+        a = np.dot(v.T, w)
+        return a
+
+    # U: 3n*3n, S_: 3, V: 3*3
+    t = svd(t_A, t_B)
+    print(f"t: {t}")
+    return t
+
+
+def find_contours_TEST():
+    # 创建realsense pipeline 以及 serial
+    pipeline = rs.pipeline()
+    # Create a config并配置要流​​式传输的管道
+    config = rs.config()
+    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 15)
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 15)
+
+    profile = pipeline.start(config)
+
+    depth_sensor = profile.get_device().first_depth_sensor()
+    depth_scale = depth_sensor.get_depth_scale()
+    print("Depth Scale is: ", depth_scale)
+    # 将depth对齐到color
+    align_to = rs.stream.color
+    align = rs.align(align_to)
+    cv2.namedWindow("RealSense live", cv2.WINDOW_AUTOSIZE)
+
+    try:
+        while True:
+            #### 1.1 Read RealSense data ####
+            frames = pipeline.wait_for_frames()
+            profile = pipeline.get_active_profile()
+
+            aligned_frames = align.process(frames)
+
+            aligned_depth_frame = aligned_frames.get_depth_frame()
+            color_frame = aligned_frames.get_color_frame()
+
+            if not aligned_depth_frame or not color_frame:
+                continue
+            depth_data = np.asanyarray(aligned_depth_frame.get_data(), dtype="float16")
+            depth_image = np.asanyarray(aligned_depth_frame.get_data())
+            scaled_depth_image = depth_image * depth_scale
+            color_image = np.asanyarray(color_frame.get_data())
+            depth_mapped_image = cv2.applyColorMap(
+                normalize(scaled_depth_image),
+                cv2.COLORMAP_MAGMA,
+            )
+            ### 2.2 Realsense processing ####
+            color_blur = cv2.GaussianBlur(color_image, (0, 0), 5)
+            color_usm = cv2.addWeighted(color_image, 1.5, color_blur, -0.5, 0)
+            corner_detection_ret, corner_detection_img, points_w, points_i = (
+                corner_detection(color_usm)
+            )
+            points_w, points_i = np.array(points_w), np.array(points_i)
+            points_w = points_w.reshape((-1, 3))
+            points_i = points_i.reshape((-1, 2))
+            # print(f"Shape of w is {points_w.shape}, shape of i is {points_i.shape}")
+            if corner_detection_ret == True:
+                imgray = cv2.cvtColor(color_usm, cv2.COLOR_BGR2GRAY)
+                ret, thresh = cv2.threshold(imgray, 127, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                # cv2.imshow("img", thresh)
+                # cv2.waitKey(0)
+                contours, hierarchy = cv2.findContours(
+                    thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+                )
+                # 查找最外层轮廓
+                if contours is not None:
+                    for i in range(len(hierarchy[0])):
+                        if hierarchy[0][i][2] == 2:
+                            # 只画出最外层的第一级子轮廓
+                            cv2.drawContours(color_usm, contours, i, (0, 255, 0), 2)
+                            # 只保存矩形四个顶点坐标
+                            simplified_contours  = cv2.approxPolyDP(contours[i], 0.02 * cv2.arcLength(contours[i], True), True)
+                            left = simplified_contours[0][0]
+                            right = simplified_contours[2][0]
+                            top = simplified_contours[1][0]
+                            bottom = simplified_contours[3][0]
+                            box = np.array([left, right, top, bottom])
+                            print(f"Box: {box}")
+                    cv2.imshow(
+                        "RealSense live",
+                        np.hstack((corner_detection_img, depth_mapped_image)),
+                        )
+                    key = cv2.waitKey(30)
+
+            else:
+                cv2.imshow(
+                        "RealSense live", np.hstack((color_image, depth_mapped_image))
+                    )
+                key = cv2.waitKey(30)
+            if key & 0xFF == ord("q") or key == 27:
+                cv2.destroyAllWindows()
+                break
+    finally:
+        pipeline.stop()
+
+
 if __name__ == "__main__":
-    rs_capture_align()
-    # file_path = r"D:\Downloads\ToF\calib\2025_01_20_21_04_24\plane_fitting.txt"
-    # Vp1, Vp2, N1, N2 = read_N_and_Vp(file_path)
-    # R = calib_by_N_and_Vp(cfg, Vp1, Vp2, N1, N2)
-    # Visualization of the rotation matrix
+    # rs_capture_align()
+
+    file_path = r"E:\Projects\ToF\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
+    Vp1, Vp2, N1, d1, N2, d2, N3, d3, intersection_lines = read_N_and_Vp(file_path)
+    R = calib_R(cfg, Vp1, Vp2, N1, N2)
+    t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3)
+
+    # find_contours_TEST()
