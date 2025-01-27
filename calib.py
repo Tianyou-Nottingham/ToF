@@ -741,10 +741,11 @@ def find_contours_TEST():
 if __name__ == "__main__":
     # rs_capture_align()
 
-    file_path = r"D:\Downloads\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
+    file_path = r"E:\Projects\ToF\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
     Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
     # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
     R = calib_R(cfg, Vp1, Vp2, N1, N2)
+    R = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
     t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
 
     # find_contours_TEST()
