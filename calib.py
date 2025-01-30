@@ -478,17 +478,6 @@ def main():
 
 
 def read_N_and_Vp(file_path):
-    # <built-in function localtime>:
-    # Vanishing Point Horizontal: [-561.14966641  510.21300619    1.        ],
-    # Vertical: [659.72555736 402.49584642   1.        ].
-    # Plane1: N: [-0.18446338 -0.36972649  0.91064569], d:446.8080933309752, error:0.002568954238524618,
-    # Plane2: N: [-0.07672262  0.78625689  0.61311805], d:369.9294947441689,error:7.191378483069497e-05
-    # Plane3c: N: [-0.0984395  -0.11629218  1.        ], d:371.8351350696706,error:100.72944821859248. 
-    # Contours: [[184 137]
-    #  [527 157]
-    #  [346   3]
-    #  [372 231]]
-
     vp_w = []
     vp_l = []
     plane1_N = []
@@ -520,25 +509,21 @@ def read_N_and_Vp(file_path):
                 plane3_N.append([float(i) for i in temp[3].split()])
                 plane3_d.append(float(re.split(",", temp[5])[0]))
             elif "Contours" in line:
-                # Contours: [[184 137]
-                #  [527 157]
-                #  [346   3]
-                #  [372 231]]
                 # temp = re.split("\[|\]|:", line).strip()
                 numbers = line.replace("Contours:", "").replace("[", "").replace("]", " ").split()
                 numbers = np.array(list(map(int, numbers))).reshape(-1,2)  # 转换为整数
                 # 寻找最靠近原点的两条直线
-                top = numbers[np.argmin(numbers[:, 1])]
+                bottom = numbers[np.argmax(numbers[:, 1])]
                 left = numbers[np.argmin(numbers[:, 0])]
                 right = numbers[np.argmax(numbers[:, 0])]
                 # 转换到归一化平面
                 ux, uy = Intrinsic[0, 2], Intrinsic[1, 2]
                 fx, fy = Intrinsic[0, 0], Intrinsic[1, 1]
-                top = [(top[0] - ux) / fx, (top[1] - uy) / fy]
+                bottom = [(bottom[0] - ux) / fx, (bottom[1] - uy) / fy]
                 left = [(left[0] - ux) / fx, (left[1] - uy) / fy]
                 right = [(right[0] - ux) / fx, (right[1] - uy) / fy]
-                points13 = [top, left]
-                points23 = [top, right]
+                points13 = [bottom, left]
+                points23 = [bottom, right]
 
                 # 直线方程ax+by+c=0 (a,b,c)
                 a13 = points13[1][1] - points13[0][1]
@@ -547,12 +532,6 @@ def read_N_and_Vp(file_path):
                 a23 = points23[1][1] - points23[0][1]
                 b23 = points23[0][0] - points23[1][0]
                 c23 = points23[0][1] * points23[1][0] - points23[0][0] * points23[1][1]
-                # a13 = a13 / np.linalg.norm([a13, b13])
-                # b13 = b13 / np.linalg.norm([a13, b13])
-                # c13 = c13 / np.linalg.norm([a13, b13])
-                # a23 = a23 / np.linalg.norm([a23, b23])
-                # b23 = b23 / np.linalg.norm([a23, b23])
-                # c23 = c23 / np.linalg.norm([a23, b23])
                 line13.append([a13, b13, c13])
                 line23.append([a23, b23, c23])
                                     
@@ -566,10 +545,6 @@ def read_N_and_Vp(file_path):
     plane3_d = np.array(plane3_d)
     line13 = np.array(line13)
     line23 = np.array(line23)
-    # print(f"Vanishing Point Horizontal: {vp_horizontal}")
-    # print(f"Vanishing Point Vertical: {vp_vertical}")
-    # print(f"Plane1: N: {plane1_N}")
-    # print(f"Plane2: N: {plane2_N}")
     return vp_w, vp_l, plane1_N, plane1_d, plane2_N, plane2_d, plane3_N, plane3_d, line13, line23
 
 
@@ -580,17 +555,14 @@ def calib_R(cfg, Vp1, Vp2, N1, N2):
     # 交换N的x y
     N1 = N1[:, [1, 0, 2]]
     N2 = N2[:, [1, 0, 2]]
-    K = cfg.RealSense["K"]
+    K = Intrinsic
     K_inv = np.linalg.inv(K)
     K_Vp1 = K_inv @ Vp1.T
     K_Vp2 = K_inv @ Vp2.T
     d1_orient_vec = K_Vp1 / np.linalg.norm(K_Vp1, axis=0)
     d2_orient_vec = K_Vp2 / np.linalg.norm(K_Vp2, axis=0)
-    # 由于RealSense 是倒着放的，所以Camera坐标系差一个绕z轴的180度
-    # 实际操作的时候，RealSense的color image和depth都应该反转过来。
-    # 可以相当于将Realsense 的坐标系乘上一个[[-1, 0, 0],[0, 1, 0], [0, 0, -1]]
-    # 这里没有翻转图像，所以R乘上一个[[-1, 0, 0],[0, 1, 0], [0, 0, -1]]
-    # R_reverse = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
+    # RealSense的坐标系绕z轴旋转180度
+    R_reverse = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
     d = np.hstack((d1_orient_vec, d2_orient_vec))
     # print(f"d shape: {d.shape}")
     N = np.vstack((N2, N1))
@@ -611,28 +583,25 @@ def calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23):
     Here, N is a nx3 vector, d is a n*1 scalar.
     """
     # 交换N的x y
-    N1 = N1[:, [1, 0, 2]]
-    N2 = N2[:, [1, 0, 2]]
+    N1 = N1[:, [1, 0, 2]].T
+    N2 = N2[:, [1, 0, 2]].T
+    N3 = N3.T
     K = cfg.RealSense["K"]
     np_13 = line13 / np.linalg.norm(line13, axis=1).reshape(-1, 1)
     np_23 = line23 / np.linalg.norm(line23, axis=1).reshape(-1, 1)
 
-    N1_c = np.array(N1 @ R.T).T  ## 3xn
+    N1_c = np.array(R @ N1)  ## 3xn
     # d1_c = d1 - N1_c @ t ## here contains the translation, which is unknown
-    N2_c = np.array(N2 @ R.T).T  ## 3xn
+    N2_c = np.array(R @ N2)  ## 3xn
 
-    N = np.hstack((N1_c, N2_c, N3.T))  ## 3*3n
-    v0 = np.zeros((3, len(N1)))
-    M = np.hstack((N1_c, N2_c, v0))  ## 3*3n
-    d = np.hstack((d1, d2, d3))  ## 3*3n
     t_A = []
     t_B = []
     for i in range(len(N1)):
-        N_i = np.array([N1_c[:, i].T, N2_c[:, i].T, N3[i,:]])
-        M_i = np.array([N1_c[:, i].T, N2_c[:, i].T, [0, 0, 0]])
+        N_i = np.array([N1_c[:, i].T, N2_c[:, i].T, N3[:,i]])
+        M_i = np.array([N1[:, i].T, N2[:, i].T, [0, 0, 0]])
         A = np_13[i,:] @ np.linalg.inv(N_i) @ M_i
         t_A.append(A)
-        d_i = np.array([d1[i], d2[i], d3[i]]).reshape((-1, 1))
+        d_i = np.array([d1[i], d2[i], d3[i] / 15]).reshape((-1, 1))
         b = np_13[i,:] @ np.linalg.inv(N_i) @ d_i
         t_B.append(b)
         # 再算line23
@@ -741,11 +710,11 @@ def find_contours_TEST():
 if __name__ == "__main__":
     # rs_capture_align()
 
-    file_path = r"E:\Projects\ToF\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
+    file_path = r"D:\Downloads\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
     Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
-    # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
+    print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
     R = calib_R(cfg, Vp1, Vp2, N1, N2)
-    R = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
+    # R = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
     t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
 
     # find_contours_TEST()
