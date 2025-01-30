@@ -240,8 +240,8 @@ def rs_capture_align(save=True):
                 cfg.Sensor["resolution"],
                 cfg.Sensor["output_shape"],
             )
-            ToF_depth_map = cv2.applyColorMap(
-                normalize(ToF_depth_map), cv2.COLORMAP_MAGMA
+            ToF_depth_img = cv2.applyColorMap(
+                normalize(ToF_depth_map, vmax=1000), cv2.COLORMAP_MAGMA
             )
 
             ##### 2. Image and ToF data processing #####
@@ -284,7 +284,7 @@ def rs_capture_align(save=True):
                 corner_detection(color_usm)
             )
              ## 棋盘格尺寸15mm,points_w所有值×15mm
-            points_w = np.array(points_w) * 15
+            points_w = np.array(points_w)
             points_i = np.array(points_i) 
             points_w = points_w.reshape((-1, 3))
             points_i = points_i.reshape((-1, 2))
@@ -305,7 +305,7 @@ def rs_capture_align(save=True):
                         np.hstack((contours_detection_img, depth_mapped_image)),
                     )
 
-                    cv2.imshow("ToF live", ToF_depth_map)
+                    cv2.imshow("ToF live", ToF_depth_img)
                     # key = cv2.waitKey(30)
 
                     #### 3.1 Plane fitting ####
@@ -377,7 +377,7 @@ def rs_capture_align(save=True):
                         "RealSense live",
                         np.hstack((corner_detection_img, depth_mapped_image)),
                     )
-                    cv2.imshow("ToF live", ToF_depth_map)
+                    cv2.imshow("ToF live", ToF_depth_img)
                     # key = cv2.waitKey(30)
 
                     
@@ -387,7 +387,7 @@ def rs_capture_align(save=True):
                 cv2.imshow(
                     "RealSense live", np.hstack((color_image, depth_mapped_image))
                 )
-                cv2.imshow("ToF live", ToF_depth_map)
+                cv2.imshow("ToF live", ToF_depth_img)
                 # key = cv2.waitKey(30)
 
             key = cv2.waitKey(30)
@@ -739,13 +739,13 @@ def find_contours_TEST():
 
 
 if __name__ == "__main__":
-    # rs_capture_align()
+    rs_capture_align()
 
-    file_path = r"E:\Projects\ToF\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
-    Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
+    # file_path = r"E:\Projects\ToF\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
+    # Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
     # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
-    R = calib_R(cfg, Vp1, Vp2, N1, N2)
-    R = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
-    t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
+    # R = calib_R(cfg, Vp1, Vp2, N1, N2)
+    # R = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
+    # t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
 
     # find_contours_TEST()
