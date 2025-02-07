@@ -17,7 +17,7 @@ import re
 RGB_path = r"E:\Projects\ToF\ToF\output\RGB1_Color.png"
 Depth_path = r"C:\Users\ezxtz6\Pictures\Depth0.png"
 Intrinsic = cfg.RealSense["K"]
-chessboard_size = [7, 10]
+chessboard_size = [10, 7]
 
 
 def normalize(value, vmin=0.0, vmax=4.0):
@@ -104,10 +104,10 @@ def find_line(img, corners, chessboard_size):
     lines_l = []
     for i in range(l):
         line = [corners[i * w], corners[(i + 1) * w - 1]]
-        lines_w.append(line)  # 短边
+        lines_w.append(line)  # 长边
     for j in range(w):
         line = [corners[j], corners[(l - 1) * w + j]]
-        lines_l.append(line)  # 长边
+        lines_l.append(line)  # 短边
     # Draw the lines
     for line in lines_w:
         img = cv2.line(
@@ -221,6 +221,8 @@ def rs_capture_align(save=True):
             depth_image = np.asanyarray(aligned_depth_frame.get_data())
             scaled_depth_image = depth_image * depth_scale
             color_image = np.asanyarray(color_frame.get_data())
+            # RealSense倒着放置的，需要上下左右翻转
+            # color_image = cv2.flip(color_image, -1)
             depth_mapped_image = cv2.applyColorMap(
                 normalize(scaled_depth_image),
                 cv2.COLORMAP_MAGMA,
@@ -228,6 +230,7 @@ def rs_capture_align(save=True):
 
             #### 1.2 Read ToF data ####
             distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
+            distances += 15 ## 矫正一下距离
             time_refine_distances, time_refine_sigma = refine_by_time(
                 distances, sigma, last_distances, last_sigma
             )
@@ -284,7 +287,7 @@ def rs_capture_align(save=True):
                 corner_detection(color_usm)
             )
              ## 棋盘格尺寸15mm,points_w所有值×15mm
-            points_w = np.array(points_w)
+            points_w = np.array(points_w) * 15
             points_i = np.array(points_i) 
             points_w = points_w.reshape((-1, 3))
             points_i = points_i.reshape((-1, 2))
@@ -335,6 +338,7 @@ def rs_capture_align(save=True):
                         Intrinsic,
                         None,
                     )
+                    print(f"rvec: {rvec}, tvec: {tvec}")
                     R, _ = cv2.Rodrigues(rvec)
                     points_c = R @ points_w.T + tvec
                     points_c = points_c.T
@@ -358,7 +362,7 @@ def rs_capture_align(save=True):
                             txt_name = os.path.join(save_path, "plane_fitting.txt")
                             with open(txt_name, "a") as f:
                                 f.write(
-                                    f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}.\n "
+                                    f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}.\n"
                                     f"Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}; \n"
                                     f"Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}; \n"
                                     f"Plane3c: N: {plane3.N}, d:{plane3.d},error:{plane3.error}. \n"
@@ -555,17 +559,20 @@ def calib_R(cfg, Vp1, Vp2, N1, N2):
     # 交换N的x y
     N1 = N1[:, [1, 0, 2]]
     N2 = N2[:, [1, 0, 2]]
+    # 上下左右翻转Vp
+    Vp1 = np.array([-Vp1[:,0], -Vp1[:,1], Vp1[:,2]])
+    Vp2 = np.array([-Vp2[:,0], -Vp2[:,1], Vp2[:,2]])
     K = Intrinsic
     K_inv = np.linalg.inv(K)
-    K_Vp1 = K_inv @ Vp1.T
-    K_Vp2 = K_inv @ Vp2.T
+    K_Vp1 = K_inv @ Vp1
+    K_Vp2 = K_inv @ Vp2
     d1_orient_vec = K_Vp1 / np.linalg.norm(K_Vp1, axis=0)
     d2_orient_vec = K_Vp2 / np.linalg.norm(K_Vp2, axis=0)
     # RealSense的坐标系绕z轴旋转180度
-    R_reverse = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
+    # R_reverse = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
     d = np.hstack((d1_orient_vec, d2_orient_vec))
     # print(f"d shape: {d.shape}")
-    N = np.vstack((N2, N1))
+    N = np.vstack((N1, N2))
     # print(f"N shape: {N.shape}")
     S = N.T @ d.T
     # print(f"S shape: {S.shape}")
@@ -708,13 +715,13 @@ def find_contours_TEST():
 
 
 if __name__ == "__main__":
-    rs_capture_align()
+    # rs_capture_align()
 
-    file_path = r"D:\Downloads\ToF\calib\2025_01_24_17_53_23\plane_fitting.txt"
+    file_path = r"E:\Projects\ToF\ToF\calib\2025_01_30_20_03_10\plane_fitting.txt"
     Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
-    print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
+    # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
     R = calib_R(cfg, Vp1, Vp2, N1, N2)
-    # R = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
+    # R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
     t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
 
     # find_contours_TEST()
