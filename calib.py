@@ -217,12 +217,17 @@ def rs_capture_align(save=True):
             if not aligned_depth_frame or not color_frame:
                 continue
 
-            depth_data = np.asanyarray(aligned_depth_frame.get_data(), dtype="float16")
-            depth_image = np.asanyarray(aligned_depth_frame.get_data())
-            scaled_depth_image = depth_image * depth_scale
             color_image = np.asanyarray(color_frame.get_data())
             # RealSense倒着放置的，需要上下左右翻转
-            # color_image = cv2.flip(color_image, -1)
+            color_image = cv2.flip(color_image, -1)
+
+            depth_data = np.asanyarray(aligned_depth_frame.get_data(), dtype="float16")
+            depth_data = cv2.flip(depth_data, -1)
+
+            depth_image = np.asanyarray(aligned_depth_frame.get_data())
+            depth_image = cv2.flip(depth_image, -1)
+            scaled_depth_image = depth_image * depth_scale
+
             depth_mapped_image = cv2.applyColorMap(
                 normalize(scaled_depth_image),
                 cv2.COLORMAP_MAGMA,
@@ -263,7 +268,7 @@ def rs_capture_align(save=True):
             plane2_index = np.array(plane2_index)
             plane1_index = outliers_detection(plane1_index, 4)
             plane2_index = outliers_detection(plane2_index, 4)
-            points_plane1 = np.array(
+            plane1_points = np.array(
                 [
                     [i, j, time_refine_distances[i, j]]
                     for i, j in plane1_index
@@ -271,7 +276,7 @@ def rs_capture_align(save=True):
                     and time_refine_distances[i, j] < 1000
                 ]
             )
-            points_plane2 = np.array(
+            plane2_points = np.array(
                 [
                     [i, j, time_refine_distances[i, j]]
                     for i, j in plane2_index
@@ -312,8 +317,12 @@ def rs_capture_align(save=True):
                     # key = cv2.waitKey(30)
 
                     #### 3.1 Plane fitting ####
-                    plane1 = plane1.ToF_RANSAC(points_plane1, res=cfg.Sensor["resolution"])
-                    plane2 = plane2.ToF_RANSAC(points_plane2, res=cfg.Sensor["resolution"])
+                    if cfg.Code["distance_rectified_fov"]:
+                        points1 = distance_rectified_fov(plane1_points)
+                        points2 = distance_rectified_fov(plane2_points)
+
+                    plane1 = plane1.ToF_RANSAC(points1, res=cfg.Sensor["resolution"])
+                    plane2 = plane2.ToF_RANSAC(points2, res=cfg.Sensor["resolution"])
 
                     fig = plt.figure(figsize=(14, 7))
 
@@ -324,10 +333,6 @@ def rs_capture_align(save=True):
                     cfg.Sensor["resolution"],
                     cfg.Sensor["output_shape"],
                 )
-
-                    if cfg.Code["distance_rectified_fov"]:
-                        points1 = distance_rectified_fov(points_plane1)
-                        points2 = distance_rectified_fov(points_plane2)
 
                     two_plane_visualization(fig, plane1, plane2, points1, points2)
 
@@ -559,17 +564,14 @@ def calib_R(cfg, Vp1, Vp2, N1, N2):
     # 交换N的x y
     N1 = N1[:, [1, 0, 2]]
     N2 = N2[:, [1, 0, 2]]
-    # 上下左右翻转Vp
-    Vp1 = np.array([-Vp1[:,0], -Vp1[:,1], Vp1[:,2]])
-    Vp2 = np.array([-Vp2[:,0], -Vp2[:,1], Vp2[:,2]])
+    Vp1 = np.array(Vp1.T)
+    Vp2 = np.array(Vp2.T)
     K = Intrinsic
     K_inv = np.linalg.inv(K)
     K_Vp1 = K_inv @ Vp1
     K_Vp2 = K_inv @ Vp2
     d1_orient_vec = K_Vp1 / np.linalg.norm(K_Vp1, axis=0)
     d2_orient_vec = K_Vp2 / np.linalg.norm(K_Vp2, axis=0)
-    # RealSense的坐标系绕z轴旋转180度
-    # R_reverse = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
     d = np.hstack((d1_orient_vec, d2_orient_vec))
     # print(f"d shape: {d.shape}")
     N = np.vstack((N1, N2))
@@ -717,7 +719,7 @@ def find_contours_TEST():
 if __name__ == "__main__":
     # rs_capture_align()
 
-    file_path = r"E:\Projects\ToF\ToF\calib\2025_01_30_20_03_10\plane_fitting.txt"
+    file_path = r"D:\Downloads\ToF\calib\2025_01_30_20_03_10\plane_fitting.txt"
     Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
     # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
     R = calib_R(cfg, Vp1, Vp2, N1, N2)
