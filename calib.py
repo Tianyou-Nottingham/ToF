@@ -5,7 +5,7 @@ import os
 import time
 import serial
 import scipy
-from TOF_RANSAC import Plane
+from TOF_RANSAC import Plane, two_planes_fitting
 from read_data_utils import read_serial_data, refine_by_time, visualize2D
 import configs.config as cfg
 import matplotlib.pyplot as plt
@@ -197,9 +197,11 @@ def rs_capture_align(save=True):
             os.mkdir(save_path)
             os.mkdir(os.path.join(save_path, "color"))
             os.mkdir(os.path.join(save_path, "depth"))
+            os.mkdir(os.path.join(save_path, "ToF"))
         cv2.namedWindow("save", cv2.WINDOW_AUTOSIZE)
     saved_color_image = None  # 保存的临时图片
     saved_depth_mapped_image = None
+    saved_ToF_depth = None
     saved_count = 0
 
     # 主循环
@@ -235,7 +237,6 @@ def rs_capture_align(save=True):
 
             #### 1.2 Read ToF data ####
             distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
-            distances += 15 ## 矫正一下距离
             time_refine_distances, time_refine_sigma = refine_by_time(
                 distances, sigma, last_distances, last_sigma
             )
@@ -320,7 +321,6 @@ def rs_capture_align(save=True):
                     if cfg.Code["distance_rectified_fov"]:
                         points1 = distance_rectified_fov(plane1_points)
                         points2 = distance_rectified_fov(plane2_points)
-
                     plane1 = plane1.ToF_RANSAC(points1, res=cfg.Sensor["resolution"])
                     plane2 = plane2.ToF_RANSAC(points2, res=cfg.Sensor["resolution"])
 
@@ -364,6 +364,29 @@ def rs_capture_align(save=True):
                     # Save the plane fitting result and vanishing points to .txt file
                     def on_key_press(event):
                         if event.key == "p":
+                            saved_color_image = color_image
+                            saved_depth_mapped_image = depth_mapped_image
+
+                            # 彩色图片保存为png格式
+                            cv2.imwrite(
+                                os.path.join(
+                                    (save_path), "color", "{}.png".format(saved_count)
+                                ),
+                                saved_color_image,
+                            )
+                            # 深度信息由采集到的float16直接保存为npy格式
+                            np.save(
+                                os.path.join((save_path), "depth", "{}".format(saved_count)),
+                                depth_data,
+                            )
+                            np.save(
+                                os.path.join((save_path), "ToF", "{}".format(saved_count)),
+                                time_refine_distances,
+                            )
+                            saved_count += 1
+                            cv2.imshow(
+                                "save", np.hstack((saved_color_image, saved_depth_mapped_image))
+                            )
                             txt_name = os.path.join(save_path, "plane_fitting.txt")
                             with open(txt_name, "a") as f:
                                 f.write(
@@ -419,10 +442,14 @@ def rs_capture_align(save=True):
                         os.path.join((save_path), "depth", "{}".format(saved_count)),
                         depth_data,
                     )
+                    np.save(
+                        os.path.join((save_path), "ToF", "{}".format(saved_count)),
+                        time_refine_distances,
+                    )
                     saved_count += 1
-                    # cv2.imshow(
-                    #     "save", np.hstack((saved_color_image, saved_depth_mapped_image))
-                    # )
+                    cv2.imshow(
+                        "save", np.hstack((saved_color_image, saved_depth_mapped_image))
+                    )
 
             # q 退出
             if key & 0xFF == ord("q") or key == 27:
@@ -580,6 +607,10 @@ def calib_R(cfg, Vp1, Vp2, N1, N2):
     # print(f"S shape: {S.shape}")
     U, S_, V = np.linalg.svd(S)
     R = V @ U.T #@ R_reverse
+    r0 = R[:, 0]/np.linalg.norm(R[:, 0])
+    r1 = R[:, 1]/np.linalg.norm(R[:, 1])
+    r2 = np.cross(r0, r1)
+    R = np.vstack((r0, r1, r2)).T
     # 矫正R的行列式为1
     if np.linalg.det(R) < 0:
         R[:, -1] = -R[:, -1]
@@ -610,7 +641,7 @@ def calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23):
         M_i = np.array([N1[:, i].T, N2[:, i].T, [0, 0, 0]])
         A = np_13[i,:] @ np.linalg.inv(N_i) @ M_i
         t_A.append(A)
-        d_i = np.array([d1[i], d2[i], d3[i] / 15]).reshape((-1, 1))
+        d_i = np.array([d1[i], d2[i], d3[i]]).reshape((-1, 1))
         b = np_13[i,:] @ np.linalg.inv(N_i) @ d_i
         t_B.append(b)
         # 再算line23
@@ -717,13 +748,13 @@ def find_contours_TEST():
 
 
 if __name__ == "__main__":
-    # rs_capture_align()
+    rs_capture_align()
 
-    file_path = r"D:\Downloads\ToF\calib\2025_01_30_20_03_10\plane_fitting.txt"
-    Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
-    # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
-    R = calib_R(cfg, Vp1, Vp2, N1, N2)
-    # R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-    t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
+    # file_path = r"E:\Projects\ToF\ToF\calib\2025_02_08_17_14_50\plane_fitting.txt"
+    # Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
+    # # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
+    # R = calib_R(cfg, Vp1, Vp2, N1, N2)
+    # # R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    # t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
 
     # find_contours_TEST()

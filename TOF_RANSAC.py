@@ -185,8 +185,8 @@ class Plane:
                         ]
                     )
                 )
-            if cfg.Code["distance_rectified_fov"]:
-                pts = distance_rectified_fov(pts)
+            # if cfg.Code["distance_rectified_fov"]:
+            #     pts = distance_rectified_fov(pts)
             # self.solve_plane(A, B, C)
             self.fit_plane(pts)
             total_inlier = 0
@@ -204,8 +204,8 @@ class Plane:
                         d_value[i],
                     ]
                 )
-                if cfg.Code["distance_rectified_fov"]:
-                    point = distance_rectified_fov(np.array([point]))[0]
+                # if cfg.Code["distance_rectified_fov"]:
+                #     point = distance_rectified_fov(np.array([point]))[0]
                 point_res = self.solve_distance(point)
                 if point_res < sigma:
                     total_inlier += 1
@@ -283,6 +283,7 @@ def test():
         plt.close(fig)
         # cv2.imshow('depth', color_depth)
         # cv2.waitKey(1) & 0xFF == ord('q')
+
 
 
 if __name__ == "__main__":

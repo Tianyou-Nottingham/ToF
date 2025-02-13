@@ -11,7 +11,7 @@ if cfg.Sensor["resolution"] == 8:
     FoV = 45  # degrees
     dx = np.tan(math.radians(FoV / 2)) / 4 * focal_length
     dy = dx
-    u_0 = 4
+    u_0 = 3.5
     v_0 = u_0
 elif cfg.Sensor["resolution"] == 4:
     focal_length = 0.648
@@ -37,7 +37,13 @@ def distance_rectified_fov(pts):
         )
         x_ToF = distance * (u - u_0) * np.cos(alpha_uv) * dx / focal_length
         y_ToF = distance * (v - v_0) * np.cos(alpha_uv) * dy / focal_length
-        z_ToF = distance  # * np.cos(alpha_uv)
+        # if u == (0 or 1 or 6 or 7) and v == (0 or 1 or 6 or 7): # corner case 
+        #     z_ToF = distance * 0.9404948331338918
+        # elif u == (0 or 1 or 6 or 7) or v == (0 or 1 or 6 or 7): # edge case
+        #     z_ToF = distance * 0.8916354321171438
+        # else:
+            
+        z_ToF = distance  #* np.cos(alpha_uv)
         rectified_pts.append([x_ToF, y_ToF, z_ToF])
     return np.array(rectified_pts)
 

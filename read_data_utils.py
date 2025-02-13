@@ -185,18 +185,25 @@ if __name__ == "__main__":
             )
             # # distances = normalize(distances)
             print(distances)
-            # if cfg.Code["distance_rectified_fov"]:
-            #     points_world = distance_rectified_fov(points3D)
-            # ax = plt.axes(projection="3d")
-            # ax.scatter(
-            #     points_world[:, 0], points_world[:, 1], points_world[:, 2], c="r"
-            # )
-            # ax.scatter(20 * points3D[:, 0], 20 * points3D[:, 1], points3D[:, 2], c="b")
-            # ax.set_xlabel("X")
-            # ax.set_ylabel("Y")
-            # ax.yaxis.set_transform(plt.gca().transAxes)
-            # ax.set_zlabel("Z")
-            # plt.show()
+            if cfg.Code["distance_rectified_fov"]:
+                points_world = distance_rectified_fov(points3D)
+            gradx = np.gradient(points_world, axis=0)
+            grady = np.gradient(points_world, axis=1)
+            # print(f"gradx: {gradx}")
+            # print(f"grady: {grady}")
+            ax = plt.axes(projection="3d")
+            ax.scatter(
+                points_world[:, 0], points_world[:, 1], points_world[:, 2], c="r"
+            )
+            ax.scatter(20 * points3D[:, 0], 20 * points3D[:, 1], points3D[:, 2], c="b")
+            ax.set_xlabel("X")
+            ax.set_ylabel("Y")
+            ax.yaxis.set_transform(plt.gca().transAxes)
+            ax.set_zlabel("Z")
+            ax.set_xlim(-100, 100)
+            ax.set_ylim(-100, 100)
+            ax.set_zlim(400, 500)
+            plt.show()
             depth_map, sigma_map = visualize2D(
                 distances,
                 sigma,

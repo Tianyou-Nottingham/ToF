@@ -2,12 +2,14 @@ import numpy as np
 import configs.config as cfg
 import serial
 from TOF_RANSAC import Plane
-from read_data_utils import read_serial_data, visualize2D, normalize
+from read_data_utils import read_serial_data
 from direction_visualization import refine_by_time
-from obstacle_avoidance import kmeans_clustering, outliers_detection
+from obstacle_avoidance import outliers_detection
 import matplotlib.pyplot as plt
 from utils.kmeans import plane_kmeans
 from utils.distance_rectified_fov import distance_rectified_fov
+from scipy.optimize import minimize
+
 
 
 def two_plane_visualization(fig, Plane1, Plane2, data1, data2):
@@ -27,8 +29,8 @@ def two_plane_visualization(fig, Plane1, Plane2, data1, data2):
     # d_offset = -(a * d[0] + b * d[1] + c * d[2])
 
     # 创建网格 (x, y)
-    x = np.linspace(-50, 50, 100)
-    y = np.linspace(-50, 50, 100)
+    x = np.linspace(-100, 100, 100)
+    y = np.linspace(-100, 100, 100)
     X, Y = np.meshgrid(x, y)
 
     # 根据平面方程 N · X + d = 0 求解 z
@@ -57,9 +59,74 @@ def two_plane_visualization(fig, Plane1, Plane2, data1, data2):
     ax.set_ylabel("Y axis")
     ax.set_zlabel("Z axis")
 
+    # ax.set_xlim(-100, 100)
+    # ax.set_ylim(-100, 100)
+    # ax.set_zlim(300, 500)
+
     # 设置标题
     ax.set_title("Plane Visualization")
 
+def two_planes_fitting(points1, points2):
+    """
+    两个平面拟合
+    :params: points1: 平面1的点
+    :params: points2: 平面2的点
+    :return: best_plane1: 平面1
+    :return: best_plane2: 平面2
+    :constraints: 平面1和平面2的法向量互相垂直
+    """
+    plane1 = Plane(np.array([0, 0, 1]), 0)
+    plane2 = Plane(np.array([0, 0, 1]), 0)
+    def fit_2planes(pts1, pts2, initial_est=[0, 1, 0, 0.5, 1, 1, 1, 0.5]):
+        pts1 = np.array(pts1)
+        pts2 = np.array(pts2)
+        pts = np.vstack((pts1, pts2))
+
+        def loss_fn(x, points):
+            x1 = x[:4]
+            x2 = x[4:]
+            plane1.N = np.array(x1[:3])
+            plane1.d = x1[3]
+            plane2.N = np.array(x2[:3])
+            plane2.d = x2[3]
+            points1 = points[:len(pts1)]
+            points2 = points[len(pts1):]
+
+            loss1 = 0
+            loss2 = 0
+            for point in points1:
+                loss1 += (np.dot(plane1.N, np.array(point)) - plane1.d) ** 2
+            for point in points2:
+                loss2 += (np.dot(plane2.N, np.array(point)) - plane2.d) ** 2
+            return loss1 + loss2
+        
+        def b_constraint(x):
+            return [{'type': 'eq', 'fun': lambda x: np.linalg.norm(x[:3]) - 1},
+                    {'type': 'eq', 'fun': lambda x: np.linalg.norm(x[4:7]) - 1},
+                    {'type': 'eq', 'fun': lambda x: np.dot(x[:3], x[4:7])}]
+
+        soln = minimize(
+            loss_fn,
+            np.array(initial_est),
+            args=(pts),
+            method="slsqp",
+            constraints=[{'type': 'eq', 'fun': lambda x: np.linalg.norm(x[:3]) - 1},
+                    {'type': 'eq', 'fun': lambda x: np.linalg.norm(x[4:7]) - 1},
+                    {'type': 'eq', 'fun': lambda x: np.dot(x[:3], x[4:7])-0}],
+            bounds=[(-1, 1), (-1, 1), (-1, 1), (0, None), (-1, 1), (-1, 1), (-1, 1), (0, None)],
+        )
+        print(soln.x)
+        plane1.N = soln.x[:3]
+        plane1.d = soln.x[3]
+        plane2.N = soln.x[4:7]
+        plane2.d = soln.x[7]
+
+        return plane1, plane2
+
+    plane1, plane2 = fit_2planes(points1, points2)
+    print(f"Plane1 N: {plane1.N}, d: {plane1.d}. Error: {plane1.error}")
+    print(f"Plane2 N: {plane2.N}, d: {plane2.d}. Error: {plane2.error}")
+    return plane1, plane2
 
 def main():
     ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
@@ -175,20 +242,19 @@ def test():
         points_plane1 = np.array([points3D[i * 8 + j] for [i, j] in plane1_index])
         points_plane2 = np.array([points3D[i * 8 + j] for [i, j] in plane2_index])
         ## 5. Plane fitting
+        if cfg.Code["distance_rectified_fov"]:
+            points_plane1 = distance_rectified_fov(np.array(points_plane1))
+            points_plane2 = distance_rectified_fov(np.array(points_plane2))
         plane1 = Plane(np.array([0, 0, 1]), 0)
         plane2 = Plane(np.array([0, 0, 1]), 0)
-        # plane1.fit_plane(points_plane1)
-        # plane2.fit_plane(points_plane2)
+        # plane1, plane2 = two_planes_fitting(points_plane1, points_plane2)
         # ToF_RANSAC will transfer the points to the world coordinate
         plane1 = plane1.ToF_RANSAC(points_plane1, res=cfg.Sensor["resolution"])
         plane2 = plane2.ToF_RANSAC(points_plane2, res=cfg.Sensor["resolution"])
         ## 6. Visualization
         fig = plt.figure(figsize=(14, 7))
         # Transfer the visulaization to the world coordinate
-        if cfg.Code["distance_rectified_fov"]:
-            points1 = distance_rectified_fov(points_plane1)
-            points2 = distance_rectified_fov(points_plane2)
-        two_plane_visualization(fig, plane1, plane2, points1, points2)
+        two_plane_visualization(fig, plane1, plane2, points_plane1, points_plane2)
         plane1.ToF_visualization(
             fig,
             time_refine_distances,
