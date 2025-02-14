@@ -5,13 +5,13 @@ import os
 import time
 import serial
 import scipy
-from TOF_RANSAC import Plane, two_planes_fitting
+from TOF_RANSAC import Plane
 from read_data_utils import read_serial_data, refine_by_time, visualize2D
 import configs.config as cfg
 import matplotlib.pyplot as plt
 from obstacle_avoidance import outliers_detection
 from utils.distance_rectified_fov import distance_rectified_fov
-from two_plane_fit import two_plane_visualization
+from two_plane_fit import two_plane_visualization, two_planes_fitting
 import re
 
 RGB_path = r"E:\Projects\ToF\ToF\output\RGB1_Color.png"
@@ -163,7 +163,7 @@ def find_infinity_point(img, lines):
     return best_point / best_point[-1]
 
 
-def rs_capture_align(save=True):
+def rs_capture(save=True):
     # 创建realsense pipeline 以及 serial
     pipeline = rs.pipeline()
 
@@ -305,9 +305,9 @@ def rs_capture_align(save=True):
                 if ret_contour == True:
                     # cv2.drawContours(corner_detection_img, contour, -1, (0, 255, 0), 2)
                     ##### 3 Prepare ToF plane fitting #####
-                    plane1 = Plane(np.array([0, 0, 1]), 0)
-                    plane2 = Plane(np.array([0, 0, 1]), 0)
-                    plane3 = Plane(np.array([0, 0, 1]), 0)
+                    plane1 = Plane(np.array([1, 0.5, 0]), 50)
+                    plane2 = Plane(np.array([-1, 0.5, 0]), 50)
+                    plane3 = Plane(np.array([0, 1, 0.5]), 50)
                     ##### 4. Visualization #####
                     cv2.imshow(
                         "RealSense live",
@@ -549,17 +549,17 @@ def read_N_and_Vp(file_path):
                 numbers = line.replace("Contours:", "").replace("[", "").replace("]", " ").split()
                 numbers = np.array(list(map(int, numbers))).reshape(-1,2)  # 转换为整数
                 # 寻找最靠近原点的两条直线
-                bottom = numbers[np.argmax(numbers[:, 1])]
+                up = numbers[np.argmin(numbers[:, 1])]
                 left = numbers[np.argmin(numbers[:, 0])]
                 right = numbers[np.argmax(numbers[:, 0])]
                 # 转换到归一化平面
                 ux, uy = Intrinsic[0, 2], Intrinsic[1, 2]
                 fx, fy = Intrinsic[0, 0], Intrinsic[1, 1]
-                bottom = [(bottom[0] - ux) / fx, (bottom[1] - uy) / fy]
+                up = [(up[0] - ux) / fx, (up[1] - uy) / fy]
                 left = [(left[0] - ux) / fx, (left[1] - uy) / fy]
                 right = [(right[0] - ux) / fx, (right[1] - uy) / fy]
-                points13 = [bottom, left]
-                points23 = [bottom, right]
+                points13 = [up, left]
+                points23 = [up, right]
 
                 # 直线方程ax+by+c=0 (a,b,c)
                 a13 = points13[1][1] - points13[0][1]
@@ -626,7 +626,7 @@ def calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23):
     N1 = N1[:, [1, 0, 2]].T
     N2 = N2[:, [1, 0, 2]].T
     N3 = N3.T
-    K = cfg.RealSense["K"]
+    K = Intrinsic
     np_13 = line13 / np.linalg.norm(line13, axis=1).reshape(-1, 1)
     np_23 = line23 / np.linalg.norm(line23, axis=1).reshape(-1, 1)
 
@@ -638,7 +638,7 @@ def calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23):
     t_B = []
     for i in range(len(N1)):
         N_i = np.array([N1_c[:, i].T, N2_c[:, i].T, N3[:,i]])
-        M_i = np.array([N1[:, i].T, N2[:, i].T, [0, 0, 0]])
+        M_i = np.array([N1_c[:, i].T, N2_c[:, i].T, [0, 0, 0]])
         A = np_13[i,:] @ np.linalg.inv(N_i) @ M_i
         t_A.append(A)
         d_i = np.array([d1[i], d2[i], d3[i]]).reshape((-1, 1))
@@ -748,13 +748,13 @@ def find_contours_TEST():
 
 
 if __name__ == "__main__":
-    rs_capture_align()
+    # rs_capture()
 
-    # file_path = r"E:\Projects\ToF\ToF\calib\2025_02_08_17_14_50\plane_fitting.txt"
-    # Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
-    # # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
-    # R = calib_R(cfg, Vp1, Vp2, N1, N2)
-    # # R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-    # t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
+    file_path = r"D:\Downloads\ToF\calib\2025_02_08_17_14_50\plane_fitting.txt"
+    Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
+    # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
+    R = calib_R(cfg, Vp1, Vp2, N1, N2)
+    R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
 
     # find_contours_TEST()
