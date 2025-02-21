@@ -97,27 +97,27 @@ def contours_detection(img_color):
 def find_line(img, corners, chessboard_size):
     '''
     棋盘格线检测
-    return img, lines_w, lines_l
+    return img, lines_l, lines_s
     '''
-    w, l = chessboard_size
-    lines_w = []
+    l, s = chessboard_size
     lines_l = []
-    for i in range(l):
-        line = [corners[i * w], corners[(i + 1) * w - 1]]
-        lines_w.append(line)  # 长边
-    for j in range(w):
-        line = [corners[j], corners[(l - 1) * w + j]]
-        lines_l.append(line)  # 短边
+    lines_s = []
+    for i in range(s):
+        line = [corners[i * l], corners[(i + 1) * l - 1]]
+        lines_l.append(line)  # 长边
+    for j in range(l):
+        line = [corners[j], corners[(s - 1) * l + j]]
+        lines_s.append(line)  # 短边
     # Draw the lines
-    for line in lines_w:
+    for line in lines_s:
         img = cv2.line(
-            img, line[0].astype(np.uint), line[-1].astype(np.uint), (0, 255, 0), 2
+            img, line[0].astype(np.uint), line[-1].astype(np.uint), (0, 255, 0), 2 # color: green
         )
     for line in lines_l:
         img = cv2.line(
-            img, line[0].astype(np.uint), line[-1].astype(np.uint), (0, 0, 255), 2
+            img, line[0].astype(np.uint), line[-1].astype(np.uint), (0, 0, 255), 2 # color: red
         )
-    return img, lines_w, lines_l
+    return img, lines_l, lines_s
 
 
 def find_infinity_point(img, lines):
@@ -163,7 +163,7 @@ def find_infinity_point(img, lines):
     return best_point / best_point[-1]
 
 
-def rs_capture(save=True):
+def rs_capture(save=True, contours_collection=False):
     # 创建realsense pipeline 以及 serial
     pipeline = rs.pipeline()
 
@@ -195,18 +195,24 @@ def rs_capture(save=True):
         )
         if not os.path.exists(save_path):
             os.mkdir(save_path)
-            os.mkdir(os.path.join(save_path, "color"))
-            os.mkdir(os.path.join(save_path, "depth"))
-            os.mkdir(os.path.join(save_path, "ToF"))
+            RGB_path = os.path.join(save_path, "color")
+            os.mkdir(RGB_path)
+            RS_path = os.path.join(save_path, "depth")
+            os.mkdir(RS_path)
+            ToF_path = os.path.join(save_path, "ToF")
+            os.mkdir(ToF_path)
         cv2.namedWindow("save", cv2.WINDOW_AUTOSIZE)
+
+    print(f"Save to {RGB_path}")
     saved_color_image = None  # 保存的临时图片
     saved_depth_mapped_image = None
     saved_ToF_depth = None
-    saved_count = 0
-
+    
+    
     # 主循环
     try:
         while True:
+            saved_count = 0
             #### 1.1 Read RealSense data ####
             frames = pipeline.wait_for_frames()
             profile = pipeline.get_active_profile()
@@ -223,15 +229,16 @@ def rs_capture(save=True):
             # RealSense倒着放置的，需要上下左右翻转
             color_image = cv2.flip(color_image, -1)
 
-            depth_data = np.asanyarray(aligned_depth_frame.get_data(), dtype="float16")
+            depth_data = np.asanyarray(aligned_depth_frame.get_data())
             depth_data = cv2.flip(depth_data, -1)
+            scaled_depth_data = depth_data * depth_scale
 
             depth_image = np.asanyarray(aligned_depth_frame.get_data())
             depth_image = cv2.flip(depth_image, -1)
             scaled_depth_image = depth_image * depth_scale
 
             depth_mapped_image = cv2.applyColorMap(
-                normalize(scaled_depth_image),
+                normalize(scaled_depth_image, vmax=1),
                 cv2.COLORMAP_MAGMA,
             )
 
@@ -299,7 +306,7 @@ def rs_capture(save=True):
             points_i = points_i.reshape((-1, 2))
             # print(f"Shape of w is {points_w.shape}, shape of i is {points_i.shape}")
 
-            if corner_detection_ret == True:
+            if corner_detection_ret == True and contours_collection == True:
                 ##### 检测轮廓 #####
                 ret_contour, contours_detection_img, contour = (contours_detection(color_usm))
                 if ret_contour == True:
@@ -332,7 +339,7 @@ def rs_capture(save=True):
                     time_refine_sigma,
                     cfg.Sensor["resolution"],
                     cfg.Sensor["output_shape"],
-                )
+                    )
 
                     two_plane_visualization(fig, plane1, plane2, points1, points2)
 
@@ -354,39 +361,10 @@ def rs_capture(save=True):
                     )
                     vanishing_point_w = find_infinity_point(color_usm, lines_w)
                     vanishing_point_l = find_infinity_point(color_usm, lines_l)
-                    # print(
-                    #     f"Vanishing Point W: {vanishing_point_w}, L: {vanishing_point_l}\n"
-                    # )
-                    # print(
-                    #     f"Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}, Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}\n"
-                    # )
-
+                    
                     # Save the plane fitting result and vanishing points to .txt file
                     def on_key_press(event):
                         if event.key == "p":
-                            saved_color_image = color_image
-                            saved_depth_mapped_image = depth_mapped_image
-
-                            # 彩色图片保存为png格式
-                            cv2.imwrite(
-                                os.path.join(
-                                    (save_path), "color", "{}.png".format(saved_count)
-                                ),
-                                saved_color_image,
-                            )
-                            # 深度信息由采集到的float16直接保存为npy格式
-                            np.save(
-                                os.path.join((save_path), "depth", "{}".format(saved_count)),
-                                depth_data,
-                            )
-                            np.save(
-                                os.path.join((save_path), "ToF", "{}".format(saved_count)),
-                                time_refine_distances,
-                            )
-                            saved_count += 1
-                            cv2.imshow(
-                                "save", np.hstack((saved_color_image, saved_depth_mapped_image))
-                            )
                             txt_name = os.path.join(save_path, "plane_fitting.txt")
                             with open(txt_name, "a") as f:
                                 f.write(
@@ -395,7 +373,29 @@ def rs_capture(save=True):
                                     f"Plane2: N: {plane2.N}, d:{plane2.d},error:{plane2.error}; \n"
                                     f"Plane3c: N: {plane3.N}, d:{plane3.d},error:{plane3.error}. \n"
                                     f"Contours: {contour}\n"
-                                ); 
+                                ) 
+                            saved_color_image = color_image
+                            saved_depth_mapped_image = depth_mapped_image
+                            print(f"Save to {RGB_path}")
+                            # 彩色图片保存为png格式
+                            cv2.imwrite(
+                                os.path.join(
+                                    RGB_path, time.strftime("%H_%M_%S", time.localtime()) + ".png"
+                                ),
+                                saved_color_image,
+                            )
+                            # 深度信息由采集到的float16直接保存为npy格式
+                            np.save(
+                                os.path.join((RS_path), "{}".format(time.strftime("%H_%M_%S", time.localtime()))),
+                                depth_data,
+                            )
+                            np.save(
+                                os.path.join((ToF_path), "{}".format(time.strftime("%H_%M_%S", time.localtime()))),
+                                time_refine_distances,
+                            )
+                            cv2.imshow(
+                                "save", np.hstack((saved_color_image, saved_depth_mapped_image))
+                            )
                             pass
                         else:
                             pass
@@ -403,6 +403,7 @@ def rs_capture(save=True):
                     # 将回调函数与图形对象绑定
                     fig.canvas.mpl_connect("key_press_event", on_key_press)
                     plt.show()
+
                 else:
                     print(f"Contours detection: False")
                     cv2.imshow(
@@ -412,6 +413,91 @@ def rs_capture(save=True):
                     cv2.imshow("ToF live", ToF_depth_img)
                     # key = cv2.waitKey(30)
 
+            elif corner_detection_ret == True and contours_collection == False:
+                ## 只采集R的数据 ##
+                ##### 3 Prepare ToF plane fitting #####
+                plane1 = Plane(np.array([1, 0.5, 0]), 50)
+                plane2 = Plane(np.array([-1, 0.5, 0]), 50)
+                ##### 4. Visualization #####
+                cv2.imshow(
+                    "RealSense live",
+                    np.hstack((corner_detection_img, depth_mapped_image)),
+                )
+
+                cv2.imshow("ToF live", ToF_depth_img)
+                # key = cv2.waitKey(30)
+
+                #### 3.1 Plane fitting ####
+                if cfg.Code["distance_rectified_fov"]:
+                    points1 = distance_rectified_fov(plane1_points)
+                    points2 = distance_rectified_fov(plane2_points)
+                plane1 = plane1.ToF_RANSAC(points1, res=cfg.Sensor["resolution"])
+                plane2 = plane2.ToF_RANSAC(points2, res=cfg.Sensor["resolution"])
+
+                fig = plt.figure(figsize=(14, 7))
+
+                plane1.ToF_visualization(
+                    fig,
+                    time_refine_distances,
+                    time_refine_sigma,
+                    cfg.Sensor["resolution"],
+                    cfg.Sensor["output_shape"],
+                )
+
+                two_plane_visualization(fig, plane1, plane2, points1, points2)
+
+                ### 3.2 Realsense vanishing point calculation ####
+                line_image, lines_l, lines_s = find_line(
+                    color_usm, points_i, chessboard_size
+                )
+                vanishing_point_l = find_infinity_point(color_usm, lines_l)
+                vanishing_point_s = find_infinity_point(color_usm, lines_s)
+                cv2.imshow(
+                    "RealSense live",
+                    np.hstack((corner_detection_img, depth_mapped_image)),
+                )
+                cv2.imshow("ToF live", ToF_depth_img)
+                # key = cv2.waitKey(30)
+                def on_key_press(event):
+                        if event.key == "p":    
+                            txt_name = os.path.join(save_path, "plane_fitting.txt")
+                            with open(txt_name, "a") as f:
+                                f.write(
+                                    f"Vanishing Point L: {vanishing_point_l}, S: {vanishing_point_s}.\n"
+                                    f"Plane1: N: {plane1.N}, d:{plane1.d}, error:{plane1.error}; \n"
+                                    f"Plane2: N: {plane2.N}, d:{plane2.d}, error:{plane2.error}; \n"
+                                )
+
+                            saved_color_image = color_image
+                            saved_depth_mapped_image = depth_mapped_image
+                            print(f"Save to {RGB_path}")
+                            # 彩色图片保存为png格式
+                            cv2.imwrite(
+                                os.path.join(
+                                    RGB_path, time.strftime("%H_%M_%S", time.localtime()) + ".png"
+                                ),
+                                saved_color_image,
+                            )
+                            # 深度信息由采集到的float16直接保存为npy格式
+                            np.save(
+                                os.path.join((RS_path), "{}".format(time.strftime("%H_%M_%S", time.localtime()))),
+                                depth_data,
+                            )
+                            np.save(
+                                os.path.join((ToF_path), "{}".format(time.strftime("%H_%M_%S", time.localtime()))),
+                                time_refine_distances,
+                            )
+                            cv2.imshow(
+                                "save", np.hstack((saved_color_image, saved_depth_mapped_image))
+                            )
+                            pass
+                        else:
+                            pass
+
+                # 将回调函数与图形对象绑定
+                fig.canvas.mpl_connect("key_press_event", on_key_press)
+                plt.show()
+                
                     
             ##### 4. Visualization #####
             else:
@@ -514,8 +600,8 @@ def main():
 
 
 def read_N_and_Vp(file_path):
-    vp_w = []
     vp_l = []
+    vp_s = []
     plane1_N = []
     plane1_d = []
     plane2_N = []
@@ -530,8 +616,8 @@ def read_N_and_Vp(file_path):
         for line in lines:
             if "Vanishing Point" in line:
                 temp = re.split("\[|\]", line)
-                vp_w.append([float(i) for i in temp[1].split()])
-                vp_l.append([float(i) for i in temp[3].split()])
+                vp_l.append([float(i) for i in temp[1].split()])
+                vp_s.append([float(i) for i in temp[3].split()])
             elif "Plane1" in line:
                 temp = re.split("\[|\]|:", line)
                 plane1_N.append([float(i) for i in temp[3].split()])
@@ -571,8 +657,8 @@ def read_N_and_Vp(file_path):
                 line13.append([a13, b13, c13])
                 line23.append([a23, b23, c23])
                                     
-    vp_w = np.array(vp_w)
     vp_l = np.array(vp_l)
+    vp_s = np.array(vp_s)
     plane1_N = np.array(plane1_N)
     plane1_d = np.array(plane1_d)
     plane2_N = np.array(plane2_N)
@@ -581,24 +667,24 @@ def read_N_and_Vp(file_path):
     plane3_d = np.array(plane3_d)
     line13 = np.array(line13)
     line23 = np.array(line23)
-    return vp_w, vp_l, plane1_N, plane1_d, plane2_N, plane2_d, plane3_N, plane3_d, line13, line23
+    return vp_l, vp_s, plane1_N, plane1_d, plane2_N, plane2_d, plane3_N, plane3_d, line13, line23
 
 
-def calib_R(cfg, Vp1, Vp2, N1, N2):
+def calib_R(cfg, Vpl, Vps, N1, N2):
     """
     通过N和Vp计算相机内参
     """
     # 交换N的x y
     N1 = N1[:, [1, 0, 2]]
     N2 = N2[:, [1, 0, 2]]
-    Vp1 = np.array(Vp1.T)
-    Vp2 = np.array(Vp2.T)
+    Vpl = np.array(Vpl.T)
+    Vps = np.array(Vps.T)
     K = Intrinsic
     K_inv = np.linalg.inv(K)
-    K_Vp1 = K_inv @ Vp1
-    K_Vp2 = K_inv @ Vp2
-    d1_orient_vec = K_Vp1 / np.linalg.norm(K_Vp1, axis=0)
-    d2_orient_vec = K_Vp2 / np.linalg.norm(K_Vp2, axis=0)
+    K_Vpl = K_inv @ Vpl
+    K_Vps = K_inv @ Vps
+    d1_orient_vec = K_Vpl / np.linalg.norm(K_Vpl, axis=0)
+    d2_orient_vec = K_Vps / np.linalg.norm(K_Vps, axis=0)
     d = np.hstack((d1_orient_vec, d2_orient_vec))
     # print(f"d shape: {d.shape}")
     N = np.vstack((N1, N2))
@@ -606,7 +692,7 @@ def calib_R(cfg, Vp1, Vp2, N1, N2):
     S = N.T @ d.T
     # print(f"S shape: {S.shape}")
     U, S_, V = np.linalg.svd(S)
-    R = V @ U.T #@ R_reverse
+    R = V.T @ U.T #@ R_reverse
     r0 = R[:, 0]/np.linalg.norm(R[:, 0])
     r1 = R[:, 1]/np.linalg.norm(R[:, 1])
     r2 = np.cross(r0, r1)
@@ -748,13 +834,15 @@ def find_contours_TEST():
 
 
 if __name__ == "__main__":
-    # rs_capture()
+    rs_capture(save=True, contours_collection=True)
 
-    file_path = r"D:\Downloads\ToF\calib\2025_02_08_17_14_50\plane_fitting.txt"
-    Vp1, Vp2, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
-    # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
-    R = calib_R(cfg, Vp1, Vp2, N1, N2)
-    R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-    t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
+    # file_path = r"E:\Projects\ToF\ToF\calib\2025_02_18_16_34_52\plane_fitting.txt"
+    # Vpl, Vps, N1, d1, N2, d2, N3, d3, line13, line23 = read_N_and_Vp(file_path)
+    # # print(f"Vp1: {Vp1}\n, Vp2: {Vp2}\n, N1: {N1}\n, d1: {d1}\n, N2: {N2}\n, d2: {d2}\n, N3: {N3}\n, d3: {d3}\n, line13: {line13}\n, line23: {line23}\n")
+    # R = calib_R(cfg, Vpl, Vps, N1, N2)
+    # R = np.array([[0.96, 0.005, -0.279], 
+    #               [-0.15, 0.834, -0.529], 
+    #               [-0.23, 0.552, 0.802]])    # R = np.array([[1,0,0],[0,1,0],[0,0,1]])
+    # t = calib_T(cfg, R, N1, d1, N2, d2, N3, d3, line13, line23)
 
     # find_contours_TEST()
