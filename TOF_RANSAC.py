@@ -124,7 +124,7 @@ class Plane:
 
         # 绘制数据点
         ax.scatter(data[:, 0], data[:, 1], data[:, 2], c=color, marker="o")
-        ax.view_init(elev=50, azim=0)
+        ax.view_init(elev=130, azim=-90, roll=-90)
         # 设置轴标签
         ax.set_xlabel("X axis")
         ax.set_ylabel("Y axis")
@@ -139,10 +139,13 @@ class Plane:
     def ToF_visualization(self, fig, distance, sigma, res=8, expansion_res=256):
         depth, sigma = visualize2D(distance, sigma, res, expansion_res)
         ax = fig.add_subplot(122)
-        norm = plt.Normalize(0, 2500)
+        norm = plt.Normalize(0, 300)
         ax.imshow(depth, cmap="magma")
-        ax.set_title("Depth Image")
-        fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap="magma"), ax=ax)
+        ax.axis("off")
+        ax.set_title("ToF Depth Image")
+        cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap="magma"), ax=ax, shrink=0.8)
+        cb.set_label("Depth Value (mm)")
+        
         # ax = fig.add_subplot(122)
         # ax.imshow(color_sigma)
         # ax.set_title('Sigma Image')
@@ -185,9 +188,7 @@ class Plane:
                         ]
                     )
                 )
-            # if cfg.Code["distance_rectified_fov"]:
-            #     pts = distance_rectified_fov(pts)
-            # self.solve_plane(A, B, C)
+            # self.solve_plane(pts[0], pts[1], pts[2])
             self.fit_plane(pts)
             total_inlier = 0
             error = 0
@@ -257,8 +258,8 @@ def test():
         if cfg.Code["distance_rectified_fov"]:
             points_world = distance_rectified_fov(points3D)
         ## 3. ToF RANSAC
-        plane = Plane(np.array([0, 0, 1]), 0)
-        best_plane = plane.ToF_RANSAC(points3D, cfg.Sensor["resolution"], 256)
+        plane = Plane(np.array([1, 0.5, 1]), 50)
+        best_plane = plane.ToF_RANSAC(points_world, cfg.Sensor["resolution"], 256)
         # best_plane = plane.fit_plane(points_world)
         print(f"Plane N: {best_plane.N}, d: {best_plane.d}. Error: {best_plane.error}")
         ## 4. Visualization

@@ -101,13 +101,14 @@ def visualize3D(distances, sigma, res=8, output_shape=[640, 640], upsample=False
 
 
 def visualize2D(distances, sigma, res=8, output_shape=[640, 640], upsample=False):
-    # print(distances)
     depth_map = np.zeros(output_shape).astype(np.uint8)
     sigma_map = np.zeros(output_shape).astype(np.uint8)
     out_width, out_height = output_shape
     pad_size = out_width // res
     distances = distances.astype(np.uint8)
     sigma = sigma.astype(np.uint8)
+    # print(distances)
+
     if upsample:
         depth_map = cv2.resize(
             distances, (out_width, out_height), interpolation=cv2.INTER_CUBIC

@@ -204,6 +204,8 @@ def compare():
     plt.ylabel("RMSE Error/mm")
     plt.title("Error Comparison")
     plt.show()
+    print(np.mean(ours, axis=1))
+    print(np.mean(direct, axis=1))
 
 
 if __name__ == "__main__":

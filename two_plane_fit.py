@@ -29,8 +29,8 @@ def two_plane_visualization(fig, Plane1, Plane2, data1, data2):
     # d_offset = -(a * d[0] + b * d[1] + c * d[2])
 
     # 创建网格 (x, y)
-    x = np.linspace(-100, 100, 100)
-    y = np.linspace(-100, 100, 100)
+    x = np.linspace(-120, 120, 100)
+    y = np.linspace(-120, 120, 100)
     X, Y = np.meshgrid(x, y)
 
     # 根据平面方程 N · X + d = 0 求解 z
@@ -49,7 +49,10 @@ def two_plane_visualization(fig, Plane1, Plane2, data1, data2):
     #     ax.plot_surface(-X, -Y, -Z, alpha=0.5, color='blue', edgecolor='k')
     # else:
     ax.plot_surface(X, Y, Z1, alpha=0.2, color="red")
+    # 红色加legend-（Plane1）
     ax.plot_surface(X, Y, Z2, alpha=0.2, color="green")
+    plt.legend(["Plane1", "Plane2"])
+
     # 绘制数据点
     ax.scatter(data1[:, 0], data1[:, 1], data1[:, 2], c="r", marker="o")
     ax.scatter(data2[:, 0], data2[:, 1], data2[:, 2], c="g", marker="o")
@@ -58,7 +61,6 @@ def two_plane_visualization(fig, Plane1, Plane2, data1, data2):
     ax.set_xlabel("X axis")
     ax.set_ylabel("Y axis")
     ax.set_zlabel("Z axis")
-
     # ax.set_xlim(-100, 100)
     # ax.set_ylim(-100, 100)
     # ax.set_zlim(300, 500)
