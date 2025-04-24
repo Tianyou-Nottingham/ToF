@@ -16,10 +16,11 @@ Sensor = {
     ),
 }
 h5_cfg = {
-    "distance": True,
-    "sigma": True,
-    "rgb": False,
-    "depth_image": True,
+    "rgb": True,
+    "hist_data": True,
+    "fr": True,
+    "mask": True,
+    "depth": False,
 }
 Code = {
     "segmentation": False,
