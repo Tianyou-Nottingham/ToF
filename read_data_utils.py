@@ -39,10 +39,12 @@ def normalize(value, vmin=cfg.Sensor["min_depth"], vmax=cfg.Sensor["max_depth"])
 def parse_data(raw_data):
     distance = []
     sigma = []
+    mask = []
 
     for line in raw_data:
         row_first = []
         row_second = []
+        mask_i = []
         pairs = line.split(b"|")[
             1:-1
         ]  # Split by '|' and ignore the first and last empty strings
@@ -50,23 +52,27 @@ def parse_data(raw_data):
             first, second = pair.split(b":")
             if first.strip() == b"X":
                 row_first.append(1)
-                row_second.append(1)
-                continue
-            row_first.append(int(first.strip()))
-            row_second.append(int(second.strip()))
+                row_second.append(0)
+                mask_i.append(0)
+            else:
+                row_first.append(int(first.strip()))
+                row_second.append(int(second.strip()))
+                mask_i.append(1)
+            
         distance.append(row_first)
         sigma.append(row_second)
-
+        mask.append(mask_i)
     distance.reverse()
     sigma.reverse()
-    return np.array(distance), np.array(sigma)
+    mask.reverse()
+    return np.array(distance), np.array(sigma), np.array(mask)
 
 
 def read_serial_data(ser, res=8):
     if ser.readline().strip() == b"PythonDataStart":
         raw_data = [ser.readline().strip() for _ in range(res)]
-    distances, sigma = parse_data(raw_data)
-    return distances, sigma  ## 8x8 array
+    distances, sigma, mask = parse_data(raw_data)
+    return distances, sigma, mask ## 8x8 array
 
 
 def refine_by_time(last_distances, last_sigma, distances, sigma, res=8):
