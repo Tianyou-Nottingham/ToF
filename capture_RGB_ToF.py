@@ -47,13 +47,17 @@ def capture_rgb_tof_data(output_dir):
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     # 检查摄像头是否打开成功
     if not cap.isOpened():
         print("无法打开摄像头")
         exit()
     ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
+<<<<<<< HEAD
     interval = 0.2  # seconds
+=======
+    interval = 0.02  # seconds
+>>>>>>> 16d7ecdd60a63e5ad33dc48c3bff30d116fc2fac
     last_time = time.time()
     
     # Read RGB data from the camera
@@ -74,7 +78,11 @@ def capture_rgb_tof_data(output_dir):
                 hist_data[:, 1] = sigma.flatten()
                 mask = mask.flatten()
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                h5_file_name = os.path.join(output_dir, f"{timestamp}.h5")
+                date = time.strftime("%Y-%m-%d")
+                if not os.path.exists(os.path.join(output_dir, date)):
+                    os.makedirs(os.path.join(output_dir, date))
+                # Save data to .h5 file 
+                h5_file_name = os.path.join(output_dir, date, f"{timestamp}.h5")
                 save_h5({"hist_data": hist_data, "fr": fr, "mask": mask, "rgb":frame}, h5_file_name, cfg.h5_cfg)
                 print(f"save data: {h5_file_name}")
                 last_time = current_time
