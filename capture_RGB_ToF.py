@@ -48,7 +48,7 @@ def capture_rgb_tof_data(output_dir):
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     # 检查摄像头是否打开成功
     if not cap.isOpened():
         print("无法打开摄像头")
