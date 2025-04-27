@@ -16,6 +16,7 @@ import time
 import serial
 from read_data_utils import read_serial_data
 import configs.config as cfg
+import datetime
 
 
 
@@ -47,17 +48,13 @@ def capture_rgb_tof_data(output_dir):
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(0)
     # 检查摄像头是否打开成功
     if not cap.isOpened():
         print("无法打开摄像头")
         exit()
     ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
-<<<<<<< HEAD
-    interval = 0.2  # seconds
-=======
     interval = 0.02  # seconds
->>>>>>> 16d7ecdd60a63e5ad33dc48c3bff30d116fc2fac
     last_time = time.time()
     
     # Read RGB data from the camera
@@ -77,7 +74,7 @@ def capture_rgb_tof_data(output_dir):
                 hist_data[:, 0] = distances.flatten()
                 hist_data[:, 1] = sigma.flatten()
                 mask = mask.flatten()
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                 date = time.strftime("%Y-%m-%d")
                 if not os.path.exists(os.path.join(output_dir, date)):
                     os.makedirs(os.path.join(output_dir, date))
