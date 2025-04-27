@@ -53,7 +53,7 @@ def capture_rgb_tof_data(output_dir):
         print("无法打开摄像头")
         exit()
     ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
-    interval = 1  # seconds
+    interval = 0.2  # seconds
     last_time = time.time()
     
     # Read RGB data from the camera
