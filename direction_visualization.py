@@ -136,7 +136,7 @@ if __name__ == "__main__":
     pad_size = cfg.Sensor["output_shape"][0] // cfg.Sensor["resolution"]
     NEIGHBORHOOD_8 = True
     while True:
-        distances, sigma = read_serial_data(ser, cfg.Sensor["resolution"])
+        distances, sigma, mask = read_serial_data(ser, cfg.Sensor["resolution"])
         ## 1. refine by time
         time_refine_distances, time_refine_sigma = refine_by_time(distances, sigma, last_distances, last_sigma)
         last_distances = distances

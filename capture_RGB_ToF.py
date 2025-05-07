@@ -17,8 +17,8 @@ import serial
 from read_data_utils import read_serial_data
 import configs.config as cfg
 import datetime
-
-
+from read_data_utils import normalize
+import pyrealsense2 as rs
 
 def save_h5(data, file_name, h5_cfg):
     with h5py.File(file_name, "w") as f:
@@ -35,8 +35,25 @@ def save_h5(data, file_name, h5_cfg):
 
 
 
-def capture_rgb_tof_data(output_dir):
-    ## Assume the FoV of ToF and RGB camera are the centralized. 640*480 -> 8*8
+def capture_rgb_tof_data(output_dir, realsense = True):
+    if realsense:
+        # Initialize the RealSense camera
+        pipeline = rs.pipeline()
+        config = rs.config()
+
+        config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 15)
+        config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 15)
+        profile = pipeline.start(config)
+
+        depth_sensor = profile.get_device().first_depth_sensor()
+        depth_scale = depth_sensor.get_depth_scale()
+        print("Depth Scale is: ", depth_scale)
+        # 将depth对齐到color
+        align_to = rs.stream.color
+        align = rs.align(align_to)
+        
+        ## Assume the FoV of ToF and RGB camera are the centralized. 640*480 -> 8*8
+
     fr = np.zeros((64, 4), dtype=np.float32)
     for i in range(8):
         for j in range(8):
@@ -48,22 +65,39 @@ def capture_rgb_tof_data(output_dir):
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(0)
     # 检查摄像头是否打开成功
     if not cap.isOpened():
         print("无法打开摄像头")
         exit()
     ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
-    interval = 0.02  # seconds
+    interval = 0.04  # seconds
     last_time = time.time()
     
     # Read RGB data from the camera
     try:
         while True:
+            #### 1.2 Read Camera data ####
             ret, frame = cap.read()
             if not ret:
                 print("无法读取视频帧")
                 break
+            
+            #### 1.1 Read RealSense data ####
+            frames = pipeline.wait_for_frames()
+            profile = pipeline.get_active_profile()
+
+            aligned_frames = align.process(frames)
+            aligned_depth_frame = aligned_frames.get_depth_frame()
+            color_frame = aligned_frames.get_color_frame()
+            if not aligned_depth_frame or not color_frame:
+                continue
+            color_image = np.asanyarray(color_frame.get_data())
+            # RealSense倒着放置的，需要上下左右翻转
+            color_image = cv2.flip(color_image, -1)
+            depth_image = np.asanyarray(aligned_depth_frame.get_data())
+            depth_image = cv2.flip(depth_image, -1)
+            scaled_depth_image = depth_image * depth_scale
 
             # 当前时间
             current_time = time.time()
@@ -80,7 +114,7 @@ def capture_rgb_tof_data(output_dir):
                     os.makedirs(os.path.join(output_dir, date))
                 # Save data to .h5 file 
                 h5_file_name = os.path.join(output_dir, date, f"{timestamp}.h5")
-                save_h5({"hist_data": hist_data, "fr": fr, "mask": mask, "rgb":frame}, h5_file_name, cfg.h5_cfg)
+                save_h5({"depth":scaled_depth_image,"hist_data": hist_data, "fr": fr, "mask": mask, "rgb":frame}, h5_file_name, cfg.h5_cfg)
                 print(f"save data: {h5_file_name}")
                 last_time = current_time
             # 按 'q' 键退出
@@ -90,8 +124,9 @@ def capture_rgb_tof_data(output_dir):
         cap.release()
         cv2.destroyAllWindows()
         ser.close()
+        pipeline.stop()
 
 
 if __name__ == "__main__":
     output_dir = "data"
-    capture_rgb_tof_data(output_dir)
+    capture_rgb_tof_data(output_dir, realsense=cfg.h5_cfg["depth"])
