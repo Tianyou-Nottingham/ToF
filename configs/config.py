@@ -2,7 +2,7 @@ import math
 import numpy as np
 
 Serial = {
-    "port": "COM5",
+    "port": "COM6",
     "baudrate": 460800,
 }
 Sensor = {
