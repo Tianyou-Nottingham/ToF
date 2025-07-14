@@ -53,6 +53,7 @@ def capture_rgb_tof_data(output_dir, realsense = True):
         align = rs.align(align_to)
         
         ## Assume the FoV of ToF and RGB camera are the centralized. 640*480 -> 8*8
+        ## If use d405, the resolution is 848*480
 
     fr = np.zeros((64, 4), dtype=np.float32)
     for i in range(8):
@@ -65,13 +66,13 @@ def capture_rgb_tof_data(output_dir, realsense = True):
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    cap = cv2.VideoCapture(3)
+    cap = cv2.VideoCapture(1)
     # 检查摄像头是否打开成功
     if not cap.isOpened():
         print("无法打开摄像头")
         exit()
     ser = serial.Serial(cfg.Serial["port"], cfg.Serial["baudrate"])
-    interval = 0.04  # seconds
+    interval = 0.1  # seconds
     last_time = time.time()
     
     # Read RGB data from the camera
@@ -94,14 +95,20 @@ def capture_rgb_tof_data(output_dir, realsense = True):
                 continue
             color_image = np.asanyarray(color_frame.get_data())
             # RealSense倒着放置的，需要上下左右翻转
-            color_image = cv2.flip(color_image, -1)
+            # color_image = cv2.flip(color_image, -1)
             depth_image = np.asanyarray(aligned_depth_frame.get_data())
-            depth_image = cv2.flip(depth_image, -1)
+            # depth_image = cv2.flip(depth_image, -1)
             scaled_depth_image = depth_image * depth_scale
-
+            # 显示RGB,depth图像
+            cv2.imshow("RGB Image", color_image)
+            cv2.imshow("Depth Image", scaled_depth_image)
             # 当前时间
             current_time = time.time()
-            if current_time - last_time >= interval:
+            # 键盘回车触发采集数据
+            if cv2.waitKey(1) & 0xFF == ord('\r'):
+                print("Capturing data...")
+            
+            # if current_time - last_time >= interval:
                 # Read data from serial port
                 distances, sigma, mask = read_serial_data(ser, cfg.Sensor["resolution"])
                 hist_data = np.zeros((64, 2), dtype=np.float32)
